@@ -801,31 +801,27 @@ class UpdateIntegrationRequest(BaseModel):
     expires_at: datetime | None = None
 
 
-# --- Code Evaluation Models (Adaptive Cognitive Feedback Engine) ---
-
-class HintItem(BaseModel):
-    level: int  # 1 to 5
-    text: str
-
-
+# Code evaluation models for coding-assessment feedback mode
 class CodeFeedbackBlock(BaseModel):
     block_start_line: int
     block_end_line: int
     flaw_summary: str
-    hints: List[HintItem]
+    hints: List[str] = Field(
+        description="Exactly three progressive hints (Level 1 to Level 3) for this flaw."
+    )
 
 
 class StructuralAnalysis(BaseModel):
     is_hardcoded: bool = Field(
-        description="True if the user brute-forced the output instead of using logic/loops."
+        description="True when output is hardcoded instead of solving with required logic."
     )
     missing_concepts: List[str] = Field(
         default=[],
-        description="Concepts the user should have used but didn't (e.g., 'for loops', 'recursion')."
+        description="Required concepts missing from the submission (for example: loops).",
     )
     structural_penalty_applied: bool = Field(
         default=False,
-        description="True if the score was capped due to hardcoding detection."
+        description="True when score is capped due to hardcoding detection.",
     )
 
 

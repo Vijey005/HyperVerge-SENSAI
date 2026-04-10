@@ -54,6 +54,7 @@ interface ChatViewProps {
     showUploadSection?: boolean;
     onFileUploaded?: (file: File) => void;
     onFileDownload?: (fileUuid: string, fileName: string) => void;
+    displayFilter?: 'all' | 'user' | 'ai';
 }
 
 export interface ChatViewHandle {
@@ -87,6 +88,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
     showUploadSection = false,
     onFileUploaded,
     onFileDownload,
+    displayFilter = 'all',
 }, ref) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -539,6 +541,11 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
         }
     }, [toastData.title, toastData.description]);
 
+    const displayChatHistory = currentChatHistory.filter((message) => {
+        if (displayFilter === 'all') return true;
+        return message.sender === displayFilter;
+    });
+
     // Effect to trigger feedback once CodeEditorView mounts
     useEffect(() => {
         if (isViewingCode && pendingFeedbackExecution && codeEditorRef.current) {
@@ -599,7 +606,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
         } else {
             return (
                 <>
-                    {currentChatHistory.length === 0 ? (
+                    {displayChatHistory.length === 0 ? (
                         <ChatPlaceholderView
                             taskType={taskType}
                             isChatHistoryLoaded={isChatHistoryLoaded}
@@ -628,7 +635,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
                             }}
                         >
                             <ChatHistoryView
-                                chatHistory={currentChatHistory}
+                                chatHistory={displayChatHistory}
                                 onViewScorecard={handleViewScorecard}
                                 onShowProgressiveFeedback={handleShowProgressiveFeedback}
                                 isAiResponding={isAiResponding}

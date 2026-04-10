@@ -67,6 +67,7 @@ interface ChatHistoryViewProps {
     onShowLearnerViewChange?: (show: boolean) => void;
     isAdminView?: boolean;
     onFileDownload?: (fileUuid: string, fileName: string) => void;
+    messageFilter?: 'all' | 'user' | 'ai';
 }
 
 const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
@@ -82,8 +83,13 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
     onShowLearnerViewChange,
     isAdminView = false,
     onFileDownload,
+    messageFilter = 'all',
 }) => {
     const chatContainerRef = useRef<HTMLDivElement>(null);
+    const filteredChatHistory = chatHistory.filter((message) => {
+        if (messageFilter === 'all') return true;
+        return message.sender === messageFilter;
+    });
 
     // State for current thinking message
     const [currentThinkingMessage, setCurrentThinkingMessage] = useState("");
@@ -197,7 +203,7 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
         if (chatContainerRef.current) {
             chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
         }
-    }, [chatHistory]);
+    }, [filteredChatHistory]);
 
     // Custom styles for the animations
     const customStyles = `
@@ -271,7 +277,7 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
     };
 
     // Find the last AI message index
-    const lastAiMessageIndex = chatHistory.reduce((lastIndex, message, index) => {
+    const lastAiMessageIndex = filteredChatHistory.reduce((lastIndex, message, index) => {
         return message.sender === 'ai' ? index : lastIndex;
     }, -1);
 
@@ -320,13 +326,13 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
                     className="h-full overflow-y-auto w-full hide-scrollbar pb-8 bg-transparent dark:bg-transparent"
                 >
                 <div className="flex flex-col space-y-6 px-2">
-                    {chatHistory.map((message, index) => (
+                    {filteredChatHistory.map((message, index) => (
                         <div key={message.id}>
                             {(() => {
                                 const currentDate = toSafeDate((message as any).timestamp);
                                 if (!currentDate) return null;
 
-                                const prevDate = index > 0 ? toSafeDate((chatHistory[index - 1] as any)?.timestamp) : null;
+                                const prevDate = index > 0 ? toSafeDate((filteredChatHistory[index - 1] as any)?.timestamp) : null;
                                 const currentKey = getLocalDateKey(currentDate);
                                 const prevKey = prevDate ? getLocalDateKey(prevDate) : null;
                                 const shouldShow = index === 0 || currentKey !== prevKey;

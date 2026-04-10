@@ -125,6 +125,7 @@ export interface ChatMessage {
     fileName?: string; // Filename for file messages
 }   
 
+export type RubricCategory = "Correctness" | "Efficiency" | "Readability";
 
 // Define scorecard item structure
 export interface ScorecardItem {
@@ -132,7 +133,9 @@ export interface ScorecardItem {
     feedback: {
         correct: string;
         wrong: string;
+        hints?: string[];
     };
+    rubric_category?: RubricCategory;
     score: number;
     max_score: number;
     pass_score: number

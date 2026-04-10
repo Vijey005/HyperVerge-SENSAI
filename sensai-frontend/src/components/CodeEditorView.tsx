@@ -4,8 +4,14 @@ import type { editor as MonacoEditor, IDisposable, IKeyboardEvent } from 'monaco
 import { Play, Send, Terminal, ArrowLeft, X, Loader2, AlertTriangle } from 'lucide-react';
 import Toast from './Toast';
 import { useThemePreference } from '@/lib/hooks/useThemePreference';
-import ProgressiveHintCard from './ProgressiveHintCard';
-import type { CodeFeedbackBlock } from './ProgressiveHintCard';
+import HintAccordion from './HintAccordion';
+
+interface CodeFeedbackBlock {
+    block_start_line: number;
+    block_end_line: number;
+    flaw_summary: string;
+    hints: string[];
+}
 
 // Structural integrity analysis from the LLM
 interface StructuralAnalysis {
@@ -1656,22 +1662,37 @@ const CodeEditorView = forwardRef<CodeEditorViewHandle, CodeEditorViewProps>(({
                                         </div>
                                     )}
 
-                                    {feedbackData.feedback_blocks.map((block, idx) => (
-                                        <ProgressiveHintCard
-                                            key={`${block.block_start_line}-${block.block_end_line}-${idx}`}
-                                            feedbackBlock={block}
-                                            index={idx}
-                                            isActive={activeCardIndex === idx}
-                                            onHover={(startLine, endLine) => {
-                                                setActiveCardIndex(idx);
-                                                highlightCodeBlock(startLine, endLine);
-                                            }}
-                                            onLeave={() => {
-                                                setActiveCardIndex(null);
-                                                clearHighlights();
-                                            }}
-                                        />
-                                    ))}
+                                    {feedbackData.feedback_blocks.map((block, idx) => {
+                                        const hints = Array.isArray(block.hints)
+                                            ? block.hints.filter((hint) => typeof hint === 'string').slice(0, 3)
+                                            : [];
+
+                                        return (
+                                            <div
+                                                key={`${block.block_start_line}-${block.block_end_line}-${idx}`}
+                                                className={`rounded-lg border p-3 transition-colors ${activeCardIndex === idx
+                                                    ? 'border-red-300 bg-red-50/40 dark:border-red-500/50 dark:bg-red-900/10'
+                                                    : 'border-gray-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/30'
+                                                    }`}
+                                                onMouseEnter={() => {
+                                                    setActiveCardIndex(idx);
+                                                    highlightCodeBlock(block.block_start_line, block.block_end_line);
+                                                }}
+                                                onMouseLeave={() => {
+                                                    setActiveCardIndex(null);
+                                                    clearHighlights();
+                                                }}
+                                            >
+                                                <div className="text-xs font-semibold text-slate-900 dark:text-white">
+                                                    {block.flaw_summary}
+                                                </div>
+                                                <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                                    Lines {block.block_start_line}-{block.block_end_line}
+                                                </div>
+                                                <HintAccordion hints={hints} className="mt-2" />
+                                            </div>
+                                        );
+                                    })}
                                 </>
                             ) : feedbackData && feedbackData.feedback_blocks.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
