@@ -17,9 +17,11 @@ export default function GenerateMCQDialog({ open, onClose, onGenerate, materials
     const [numQuestions, setNumQuestions] = useState(15);
     const [difficulty, setDifficulty] = useState('medium');
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isFetchingContent, setIsFetchingContent] = useState(false);
+    const [fetchedContent, setFetchedContent] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
 
-    // Simple block text extractor since we only need raw text for the LLM
+    // Simple block text extractor
     const extractText = (blocks: any[]): string => {
         if (!Array.isArray(blocks)) return "";
         let text = "";
@@ -39,18 +41,41 @@ export default function GenerateMCQDialog({ open, onClose, onGenerate, materials
         return text;
     };
 
-    const handleSubmit = async () => {
-        let finalMaterialContent = material;
+    // Fetch material content from the backend when a material is selected
+    const handleMaterialSelect = async (materialId: string) => {
+        setSelectedMaterialId(materialId);
+        setFetchedContent('');
+        setError(null);
 
-        if (materials && materials.length > 0 && selectedMaterialId) {
-            const selectedMat = materials.find(m => m.id === selectedMaterialId);
-            if (selectedMat && selectedMat.content) {
-                finalMaterialContent = extractText(selectedMat.content);
+        if (!materialId) return;
+
+        setIsFetchingContent(true);
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/tasks/${materialId}`);
+            if (!res.ok) throw new Error('Failed to fetch material content');
+            const data = await res.json();
+
+            // Content can be in blocks or content field
+            const blocks = data.blocks || data.content || [];
+            const text = extractText(blocks);
+            if (!text.trim()) {
+                setError('This material appears to be empty. Please choose another or paste content manually below.');
             }
+            setFetchedContent(text);
+        } catch (err) {
+            setError('Could not load material content. Please paste it manually below.');
+            setSelectedMaterialId('');
+        } finally {
+            setIsFetchingContent(false);
         }
+    };
 
-        if (!finalMaterialContent || !finalMaterialContent.trim()) {
-            setError('Please provide some reference material or select a topic');
+    const handleSubmit = async () => {
+        // Priority: fetchedContent from selected material > manually pasted text
+        const finalMaterialContent = fetchedContent.trim() || material.trim();
+
+        if (!finalMaterialContent) {
+            setError('Please select a topic or paste reference material');
             return;
         }
 
@@ -62,6 +87,7 @@ export default function GenerateMCQDialog({ open, onClose, onGenerate, materials
             // reset state
             setMaterial('');
             setSelectedMaterialId('');
+            setFetchedContent('');
             setDifficulty('medium');
             setNumQuestions(15);
             onClose();
@@ -119,14 +145,25 @@ export default function GenerateMCQDialog({ open, onClose, onGenerate, materials
                                                 <select
                                                     className="w-full px-3 py-2 bg-[#0D0D0D] border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                                                     value={selectedMaterialId}
-                                                    onChange={(e) => setSelectedMaterialId(e.target.value)}
-                                                    disabled={isGenerating}
+                                                    onChange={(e) => handleMaterialSelect(e.target.value)}
+                                                    disabled={isGenerating || isFetchingContent}
                                                 >
                                                     <option value="">-- Custom material (use text box) --</option>
                                                     {materials.map(m => (
                                                         <option key={m.id} value={m.id}>{m.title}</option>
                                                     ))}
                                                 </select>
+                                                {isFetchingContent && (
+                                                    <p className="mt-2 text-sm text-purple-400 flex items-center">
+                                                        <span className="inline-block w-3 h-3 border-2 border-purple-400 border-t-transparent rounded-full animate-spin mr-2" />
+                                                        Loading material content...
+                                                    </p>
+                                                )}
+                                                {selectedMaterialId && fetchedContent && !isFetchingContent && (
+                                                    <p className="mt-2 text-xs text-gray-500">
+                                                        ✓ {fetchedContent.trim().split(/\s+/).length} words loaded from material
+                                                    </p>
+                                                )}
                                                 {!selectedMaterialId && (
                                                     <textarea
                                                         className="mt-3 w-full h-32 px-3 py-2 bg-[#0D0D0D] border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
