@@ -13,6 +13,7 @@ from api.models import (
     QuestionType,
     CodeEvaluationRequest,
     CodeEvaluationResponse,
+    GenerateMCQRequest,
 )
 from api.llm import (
     run_llm_with_openai,
@@ -46,6 +47,7 @@ from api.prompts.subjective_question import SUBJECTIVE_QUESTION_SYSTEM_PROMPT, S
 from api.prompts.doubt_solving import DOUBT_SOLVING_SYSTEM_PROMPT, DOUBT_SOLVING_USER_PROMPT
 from api.prompts.assignment import ASSIGNMENT_SYSTEM_PROMPT, ASSIGNMENT_USER_PROMPT
 from api.prompts.code_evaluation import CODE_EVALUATION_SYSTEM_PROMPT, CODE_EVALUATION_USER_PROMPT
+from api.prompts.generate_mcq import GENERATE_MCQ_SYSTEM_PROMPT, GENERATE_MCQ_USER_PROMPT
 
 router = APIRouter()
 
@@ -1120,3 +1122,43 @@ async def ai_code_evaluate(request: CodeEvaluationRequest):
                     status_code=500,
                     detail=f"Code evaluation failed: {str(e)}",
                 )
+
+
+@router.post("/generate-mcq")
+async def generate_mcq_from_material(request: GenerateMCQRequest):
+    class MCQOption(BaseModel):
+        id: str = Field(description="Unique identifier for the option, e.g., 'A', 'B', 'C', 'D'")
+        text: str = Field(description="The text content of the option")
+
+    class MCQQuestion(BaseModel):
+        question_text: str = Field(description="The text of the multiple choice question")
+        options: list[MCQOption] = Field(description="The 4 possible options for the question")
+        correct_option_id: str = Field(description="The ID of the correct option")
+        explanation: str = Field(description="Explanation of why this option is correct and others are wrong")
+
+    class GenerateMCQResponse(BaseModel):
+        questions: list[MCQQuestion]
+
+    messages = compile_prompt(
+        GENERATE_MCQ_SYSTEM_PROMPT,
+        GENERATE_MCQ_USER_PROMPT,
+        num_questions=request.num_questions,
+        reference_material=request.material_content,
+    )
+
+    model = openai_plan_to_model_name["text"]
+
+    try:
+        result = await run_llm_with_openai(
+            model=model,
+            messages=messages,
+            response_model=GenerateMCQResponse,
+            max_output_tokens=8192,
+        )
+        return result.model_dump()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"MCQ Generation failed: {str(e)}",
+        )
+

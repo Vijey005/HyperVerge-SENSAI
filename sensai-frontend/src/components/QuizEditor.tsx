@@ -35,8 +35,8 @@ import { useAuth } from "@/lib/auth";
 // Import scorecard validation utility
 import { validateScorecardCriteria as validateScorecardCriteriaUtil, ValidationCallbacks } from "@/lib/utils/scorecardValidation";
 
-// Add import for NotionIntegration
 import NotionIntegration from "./NotionIntegration";
+import GenerateMCQDialog from "./GenerateMCQDialog";
 
 // Add imports for Notion rendering
 import { BlockList, RenderConfig } from "@udus/notion-renderer/components";
@@ -158,6 +158,9 @@ const QuizEditor = forwardRef<QuizEditorHandle, QuizEditorProps>(({
     const [toastTitle, setToastTitle] = useState("");
     const [toastMessage, setToastMessage] = useState("");
     const [toastEmoji, setToastEmoji] = useState("🚀");
+
+    // Add state for Generate MCQ dialog
+    const [showGenerateMCQ, setShowGenerateMCQ] = useState(false);
 
     // Add integration state variables
     const [integrationBlocks, setIntegrationBlocks] = useState<any[]>([]);
@@ -848,6 +851,84 @@ const QuizEditor = forwardRef<QuizEditorHandle, QuizEditorProps>(({
     }, [questions, currentQuestionIndex, onChange, status]);
 
 
+
+    const handleGenerateMCQ = async (material: string, numQuestions: number) => {
+        try {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/ai/generate-mcq`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ material_content: material, num_questions: numQuestions })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to generate MCQs');
+            }
+
+            const data = await response.json();
+            
+            if (data.questions && Array.isArray(data.questions)) {
+                // Transform to QuizQuestion format
+                const newQuestions: QuizQuestion[] = data.questions.map((q: any, index: number) => {
+                    const mappedOptions = q.options.map((opt: any) => ({
+                        id: opt.id,
+                        text: opt.text
+                    }));
+                    
+                    const explanationText = q.explanation ? `\n\nExplanation: ${q.explanation}` : '';
+
+                    return {
+                        id: `question-${Date.now()}-${index}`,
+                        content: [
+                            {
+                                type: "paragraph",
+                                content: [{ type: "text", text: q.question_text, styles: {} }]
+                            },
+                            {
+                                type: "paragraph",
+                                content: [{ type: "text", text: "Options:\n" + mappedOptions.map((opt: any) => `${opt.id}: ${opt.text}`).join('\n'), styles: {} }]
+                            }
+                        ],
+                        config: {
+                            ...defaultQuestionConfig,
+                            questionType: 'objective',
+                            inputType: 'text',
+                            responseType: 'chat',
+                            title: `AI MC Question ${index + 1}`,
+                            correctAnswer: [
+                                {
+                                    type: "paragraph",
+                                    content: [{ type: "text", text: `Correct Answer: Option ${q.correct_option_id}${explanationText}`, styles: {} }]
+                                }
+                            ],
+                            settings: { allowCopyPaste: true }
+                        }
+                    };
+                });
+
+                const updatedQuestions = [...questions, ...newQuestions];
+                setQuestions(updatedQuestions);
+                
+                if (onChange) {
+                    onChange(updatedQuestions);
+                }
+
+                setToastTitle("MCQs Generated");
+                setToastMessage(`Successfully generated ${newQuestions.length} questions.`);
+                setToastEmoji("✨");
+                setShowToast(true);
+                
+                // Select the first newly generated question
+                if (newQuestions.length > 0) {
+                    setCurrentQuestionIndex(questions.length);
+                    setActiveEditorTab('question');
+                }
+            }
+        } catch (error: any) {
+            console.error('Error generating MCQs:', error);
+            throw error; // Forward to dialog's error state
+        }
+    };
 
     // Add a new question
     const addQuestion = useCallback(() => {
@@ -1824,6 +1905,14 @@ const QuizEditor = forwardRef<QuizEditorHandle, QuizEditorProps>(({
                                                 </div>
                                                 Add question
                                             </button>
+                                            <button
+                                                onClick={() => setShowGenerateMCQ(true)}
+                                                className="w-full flex items-center justify-center px-4 py-2 mt-2 text-sm rounded-md transition-colors cursor-pointer disabled:cursor-not-allowed text-purple-600 bg-purple-100 hover:bg-purple-200 dark:text-purple-300 dark:bg-purple-900/30 dark:hover:bg-purple-900/50"
+                                                disabled={readOnly || isLoadingIntegration}
+                                            >
+                                                <Sparkles size={14} className="mr-2" />
+                                                Generate with AI
+                                            </button>
                                         </div>
                                     )}
 
@@ -2188,6 +2277,13 @@ const QuizEditor = forwardRef<QuizEditorHandle, QuizEditorProps>(({
                     </>
                 )}
             </div>
+
+            {/* Generate MCQ Dialog */}
+            <GenerateMCQDialog
+                open={showGenerateMCQ}
+                onClose={() => setShowGenerateMCQ(false)}
+                onGenerate={handleGenerateMCQ}
+            />
 
             {/* Toast for language combination validation */}
             <Toast

@@ -800,6 +800,13 @@ class UpdateIntegrationRequest(BaseModel):
     refresh_token: str | None = None
     expires_at: datetime | None = None
 
+class GenerateMCQRequest(BaseModel):
+    material_content: str
+    num_questions: Optional[int] = 15
+    course_id: Optional[int] = None
+    milestone_id: Optional[int] = None
+
+
 
 # --- Code Evaluation Models (Adaptive Cognitive Feedback Engine) ---
 
