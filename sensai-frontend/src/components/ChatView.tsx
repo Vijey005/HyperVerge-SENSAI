@@ -18,6 +18,7 @@ export interface CodeViewState {
     output: string;
     hasWebLanguages: boolean;
     executionTime?: string;
+    isViewingFeedback?: boolean;
 }
 
 // Define MobileViewChangeEvent interface for the parent component
@@ -102,6 +103,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
 
     // Add state to keep track of the last copied content
     const [lastCopiedContent, setLastCopiedContent] = useState<string>('');
+    const [pendingFeedbackExecution, setPendingFeedbackExecution] = useState(false);
 
     // Determine if this is a coding question
     const isCodingQuestion = currentQuestionConfig?.inputType === 'code';
@@ -537,6 +539,23 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
         }
     }, [toastData.title, toastData.description]);
 
+    // Effect to trigger feedback once CodeEditorView mounts
+    useEffect(() => {
+        if (isViewingCode && pendingFeedbackExecution && codeEditorRef.current) {
+            // Give it a tiny bit of time to fully initialize Monaco
+            const timer = setTimeout(() => {
+                codeEditorRef.current?.evaluateCodeFeedback();
+                setPendingFeedbackExecution(false);
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+    }, [isViewingCode, pendingFeedbackExecution]);
+
+    const handleShowProgressiveFeedback = () => {
+        setPendingFeedbackExecution(true);
+        setIsViewingCode(true);
+    };
+
     // Render the code editor or chat view based on state
     const renderMainContent = () => {
         // If viewing code and not in viewOnly mode, show the code editor
@@ -547,8 +566,22 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
                     initialCode={codeContent}
                     languages={codingLanguages}
                     handleCodeSubmit={handleCodeSubmit}
+                    enableFeedbackMode={true}
                     onCodeRun={handleCodeRun}
                     disableCopyPaste={disableCopyPaste}
+                    onFeedbackVisibilityChange={(isVisible) => {
+                        if (onCodeStateChange) {
+                            onCodeStateChange({
+                                isViewingCode,
+                                isRunning,
+                                previewContent,
+                                output,
+                                hasWebLanguages,
+                                executionTime,
+                                isViewingFeedback: isVisible
+                            });
+                        }
+                    }}
                     onCodeChange={(updatedCode) => {
                         setTimeout(() => {
                             setCodeContent(updatedCode);
@@ -597,6 +630,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
                             <ChatHistoryView
                                 chatHistory={currentChatHistory}
                                 onViewScorecard={handleViewScorecard}
+                                onShowProgressiveFeedback={handleShowProgressiveFeedback}
                                 isAiResponding={isAiResponding}
                                 showPreparingReport={showPreparingReport}
                                 currentQuestionConfig={currentQuestionConfig}
@@ -612,7 +646,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
 
                     {/* Input area with fixed position at bottom */}
                     {!viewOnly && (
-                        <div className="pt-2 input-container bg-white border-t border-gray-200 dark:bg-[#111111] dark:border-transparent">
+                        <div className="pt-4 pb-2 input-container bg-transparent">
                             {/* Learning Material Suggestions */}
                             {taskType === 'learning_material' && currentChatHistory.length === 0 && (
                                 <div className="mb-4">
@@ -667,7 +701,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
                                     ) : (
                                         /* Hide the text input for coding questions in exam mode */
                                         !(currentQuestionConfig?.responseType === 'exam' && isCodingQuestion) && (
-                                            <div className="relative flex items-center rounded-3xl py-1 overflow-hidden border bg-gray-50 border-gray-300 shadow-sm dark:bg-[#111111] dark:border-[#222222] dark:shadow-none">
+                                            <div className="relative flex items-center rounded-[24px] py-1.5 overflow-hidden bg-[#f8f9fa] border border-[#e5e7eb] shadow-[0_2px_12px_rgba(0,0,0,0.06)] dark:bg-[#111111]/90 dark:backdrop-blur-md dark:border-white/10 dark:shadow-[0_4px_20px_rgba(0,0,0,0.5)] transition-all duration-300 focus-within:shadow-[0_4px_16px_rgba(0,0,0,0.08)] dark:focus-within:border-white/20">
                                                 <div className="flex-1 flex items-center">
                                                     <textarea
                                                         id="no-border-textarea"
@@ -749,7 +783,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
 
     return (
         <div
-            className={`flex-1 flex flex-col px-3 sm:px-6 py-6 overflow-auto h-full chat-view-wrapper ${isViewingCode ? 'bg-gray-200 dark:!bg-[#111111]' : 'bg-white dark:bg-transparent'}`}
+            className={`flex-1 flex flex-col px-3 sm:px-6 py-6 overflow-auto h-full chat-view-wrapper ${isViewingCode ? 'bg-gray-200 dark:!bg-[#111111]' : 'bg-transparent'}`}
         >
             <style jsx global>{`
                 /* Code toggle colors (used by .code-toggle-switch via CSS vars) */

@@ -11,6 +11,8 @@ from api.models import (
     ChatResponseType,
     TaskType,
     QuestionType,
+    CodeEvaluationRequest,
+    CodeEvaluationResponse,
 )
 from api.llm import (
     run_llm_with_openai,
@@ -43,6 +45,7 @@ from api.prompts.objective_question import OBJECTIVE_QUESTION_SYSTEM_PROMPT, OBJ
 from api.prompts.subjective_question import SUBJECTIVE_QUESTION_SYSTEM_PROMPT, SUBJECTIVE_QUESTION_USER_PROMPT
 from api.prompts.doubt_solving import DOUBT_SOLVING_SYSTEM_PROMPT, DOUBT_SOLVING_USER_PROMPT
 from api.prompts.assignment import ASSIGNMENT_SYSTEM_PROMPT, ASSIGNMENT_USER_PROMPT
+from api.prompts.code_evaluation import CODE_EVALUATION_SYSTEM_PROMPT, CODE_EVALUATION_USER_PROMPT
 
 router = APIRouter()
 
@@ -634,6 +637,34 @@ async def ai_response_for_question(request: AIChatRequest):
                         f"---\n\n**Knowledge Base**\n\n{knowledge_base}\n\n"
                     )
 
+                # --- Anti-Hardcoding & Structural Validation for Code Questions ---
+                # When a code question has AI training resources (reference code from
+                # the teacher), inject instructions that tell the LLM to validate the
+                # student's structural approach, not just output correctness.
+                is_code_question = question.get("input_type") == "code"
+                if is_code_question and knowledge_base:
+                    question_details += (
+                        "---\n\n"
+                        "**CRITICAL: Structural Validation Rules for Code Submissions**\n\n"
+                        "The Knowledge Base above contains the teacher's reference code showing the INTENDED algorithmic approach. "
+                        "You MUST evaluate the student's code for structural integrity, not just output correctness.\n\n"
+                        "ANTI-HARDCODING CHECK:\n"
+                        "- Compare the student's code STRUCTURE against the teacher's reference code.\n"
+                        "- The student does NOT need to write identical code to the reference. Variable names, formatting, and minor stylistic differences are acceptable.\n"
+                        "- However, the student MUST demonstrate the same core algorithmic concepts shown in the reference code (e.g., loops, recursion, conditionals, data structures).\n"
+                        "- If the teacher's reference uses a `for` loop to generate output, and the student instead hardcodes individual print/output statements to produce the same result, "
+                        "this is HARDCODING and is a FAILURE of structural integrity.\n"
+                        "- Other forms of brute-forcing include: copy-pasting output lines, using repetitive statements instead of iteration, avoiding the core concept the question is designed to teach.\n\n"
+                        "SCORING PENALTY:\n"
+                        "- If hardcoding or brute-forcing is detected, you MUST cap ALL scorecard criteria scores to at most 40% of their max_score, even if the output appears correct.\n"
+                        "- In the feedback for the highest-weighted criterion, explicitly explain WHY the score was reduced: "
+                        "the student's output may be correct, but their approach does not demonstrate the required concept.\n"
+                        "- Provide a guiding hint like: 'Your output is correct, but think about how you would scale this to 1000 lines. "
+                        "Look at using a loop to make your code more efficient and demonstrate the intended learning objective.'\n\n"
+                        "IMPORTANT: A correct approach that differs stylistically from the reference is FINE. "
+                        "Only penalize when the student entirely avoids the core algorithmic concept the reference code demonstrates.\n\n"
+                    )
+
                 if question["type"] == QuestionType.OBJECTIVE:
                     prompt_name = "objective-question"
                     messages = compile_prompt(
@@ -1006,3 +1037,86 @@ async def ai_response_for_assignment(request: AIChatRequest):
         stream_response(),
         media_type="application/x-ndjson",
     )
+
+
+@router.post("/code-evaluate")
+async def ai_code_evaluate(request: CodeEvaluationRequest):
+    """
+    Evaluate submitted code using an LLM-driven adaptive tutor.
+    Returns structured feedback with evidence-linked line ranges and
+    5-stage progressive hints tailored to the student's cognitive profile.
+    """
+    with langfuse.start_as_current_span(
+        name="code_evaluation",
+    ) as trace:
+        metadata = {
+            "task_id": request.task_id,
+            "user_id": request.user_id,
+            "user_email": request.user_email,
+            "language": request.language,
+        }
+
+        # Build the cognitive profile string for prompt injection
+        cognitive_profile_str = json.dumps(request.cognitive_profile.model_dump())
+
+        # Compile the prompt with the code, language, and cognitive profile
+        messages = compile_prompt(
+            CODE_EVALUATION_SYSTEM_PROMPT,
+            CODE_EVALUATION_USER_PROMPT,
+            code=request.code,
+            language=request.language,
+            cognitive_profile=cognitive_profile_str,
+        )
+
+        # Use the reasoning model for better code analysis
+        model = openai_plan_to_model_name["text"]
+
+        llm_input = f"# Code ({request.language})\n\n```{request.language}\n{request.code}\n```\n\n# Cognitive Profile\n\n{cognitive_profile_str}"
+
+        with langfuse.start_as_current_observation(
+            as_type="generation", name="code_evaluation_response"
+        ) as observation:
+            try:
+                result = await run_llm_with_openai(
+                    model=model,
+                    messages=messages,
+                    response_model=CodeEvaluationResponse,
+                    max_output_tokens=8192,
+                )
+
+                llm_output = result.model_dump()
+
+                observation.update(
+                    input=llm_input,
+                    output=llm_output,
+                    metadata={
+                        "prompt_name": "code-evaluation",
+                        "input": llm_input,
+                    },
+                )
+
+                session_id = f"code_eval_{request.task_id}_{request.user_id}"
+                metadata["output"] = llm_output
+                trace.update_trace(
+                    user_id=str(request.user_id),
+                    session_id=session_id,
+                    metadata=metadata,
+                    input=llm_input,
+                    output=llm_output,
+                )
+
+                return llm_output
+
+            except Exception as e:
+                observation.update(
+                    input=llm_input,
+                    output=str(e),
+                    metadata={
+                        "prompt_name": "code-evaluation",
+                        "error": str(e),
+                    },
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Code evaluation failed: {str(e)}",
+                )

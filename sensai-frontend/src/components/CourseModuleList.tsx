@@ -692,13 +692,13 @@ export default function CourseModuleList({
                     const moduleContent = (
                         <div
                             key={module.id}
-                            className="border-none rounded-lg transition-colors"
+                            className="border-none rounded-2xl transition-all duration-300 hover:-translate-y-1 shadow-sm hover:shadow-md mb-4"
                             style={{ backgroundColor: getEffectiveBackgroundColor(module.backgroundColor, index) }}
                         >
                             <div className="flex flex-col">
                                 {/* Module header with title and buttons */}
                                 <div
-                                    className={`flex items-center p-4 pb-3 ${module.unlockAt ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                                    className={`flex items-center p-5 pb-4 ${module.unlockAt ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                                     onClick={(e) => handleModuleClick(e, module.id)}
                                 >
                                     <button

@@ -1154,9 +1154,10 @@ export default function LearnerQuizView({
                                 // Only now hide the preparing report message
                                 setTimeout(() => setShowPreparingReport(false), 0);
 
-                                // Auto-open the scorecard when report is ready if not exam question
+                                // Auto-open the scorecard when report is ready if not exam question and not code question
                                 if (completeScorecard && completeScorecard.length > 0 &&
-                                    validQuestions[currentQuestionIndex]?.config?.responseType !== 'exam') {
+                                    validQuestions[currentQuestionIndex]?.config?.responseType !== 'exam' &&
+                                    validQuestions[currentQuestionIndex]?.config?.inputType !== 'code') {
                                     handleViewScorecard(completeScorecard);
                                 }
                             }
@@ -1744,6 +1745,19 @@ export default function LearnerQuizView({
                     }
                 }
                 
+                .feedback-active-grid {
+                    display: grid;
+                    grid-template-columns: 1fr 2fr;
+                    height: 100%;
+                    
+                    @media (max-width: 1024px) {
+                        grid-template-columns: 1fr;
+                        grid-template-rows: 50% 50%;
+                        height: 100vh;
+                        overflow: hidden;
+                    }
+                }
+                
                 .two-column-grid {
                     display: grid;
                     grid-template-columns: 1fr 1fr;
@@ -2001,10 +2015,11 @@ export default function LearnerQuizView({
             `}</style>
 
             <div
-                className={`overflow-hidden ${isCodeQuestion && codeViewState.isViewingCode ? 'three-column-grid' : 'two-column-grid'} bg-white border border-gray-200 shadow-sm dark:bg-[#111111] dark:border-[#222222] dark:shadow-none quiz-view-container`}
+                className={`overflow-hidden rounded-2xl mx-2 mb-2 ${isCodeQuestion && codeViewState.isViewingCode ? (codeViewState.isViewingFeedback ? 'feedback-active-grid' : 'three-column-grid') : 'two-column-grid'} bg-white/95 border border-gray-200/60 shadow-lg dark:bg-[#111111]/95 dark:backdrop-blur-xl dark:border-white/10 dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] quiz-view-container`}
+                style={{ height: 'calc(100% - 8px)' }}
             >
                 {/* Left side - Question (33% or 50% depending on layout) */}
-                <div className="p-6 flex flex-col lg:border-r lg:border-b-0 sm:border-b sm:border-r-0 question-container bg-white border-gray-200 dark:bg-[#1A1A1A] dark:border-[#222222]"
+                <div className="p-8 flex flex-col lg:border-r lg:border-b-0 sm:border-b sm:border-r-0 question-container bg-transparent dark:bg-transparent"
                     style={{ overflow: 'auto' }}>
                     {/* Navigation controls at the top of left side - only show if more than one question */}
                     {validQuestions.length > 1 ? (
@@ -2087,16 +2102,18 @@ export default function LearnerQuizView({
                 </div>
 
                 {/* Middle column - Chat/Code View */}
-                <div className="flex flex-col h-full overflow-auto lg:border-l lg:border-t-0 sm:border-t sm:border-l-0 chat-container bg-white border border-gray-200 dark:bg-[#111111] dark:border-[#222222]">
-                    {isViewingScorecard ? (
+                <div className="flex flex-col h-full overflow-auto lg:border-l lg:border-t-0 sm:border-t sm:border-l-0 chat-container bg-gray-50/30 border-gray-200/60 dark:bg-[#0a0a0a]/30 dark:border-white/5">
+                    {isViewingScorecard && (
                         /* Use the ScorecardView component */
                         <ScorecardView
                             activeScorecard={activeScorecard}
                             handleBackToChat={handleBackToChat}
                             lastUserMessage={getLastUserMessage as ChatMessage | null}
                         />
-                    ) : (
-                        /* Use the ChatView component */
+                    )}
+                    
+                    <div className={isViewingScorecard ? 'hidden' : 'flex flex-col h-full w-full'}>
+                        {/* Use the ChatView component */}
                         <ChatView
                             currentChatHistory={currentChatHistory as ChatMessage[]}
                             isAiResponding={isAiResponding}
@@ -2123,11 +2140,11 @@ export default function LearnerQuizView({
                             userId={userId}
                             ref={chatViewRef}
                         />
-                    )}
+                    </div>
                 </div>
 
                 {/* Third column - Code Preview (only shown for coding questions) */}
-                {isCodeQuestion && codeViewState.isViewingCode && (
+                {isCodeQuestion && codeViewState.isViewingCode && !codeViewState.isViewingFeedback && (
                 <div className="border-l h-full overflow-auto border-gray-200 bg-gray-50 dark:border-[#222222] dark:bg-[#111111]">
                         <CodePreview
                             isRunning={codeViewState.isRunning}

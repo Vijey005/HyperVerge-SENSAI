@@ -138,8 +138,8 @@ export default function CourseCard({ course, onDelete }: CourseCardProps) {
     return (
         <div className="group relative">
             <Link href={getLinkPath()} className="block h-full">
-                <div className={`rounded-lg p-6 h-full transition-all hover:opacity-90 cursor-pointer border-b-2 ${getBorderColor()} border-opacity-70 bg-gray-100 dark:bg-[#1A1A1A] text-gray-700 dark:text-gray-300`}>
-                    <h2 className="text-xl font-light mb-2">{course.title}</h2>
+                <div className={`rounded-2xl p-6 h-full transition-all duration-300 hover:scale-[1.02] hover:shadow-xl cursor-pointer border-b-4 ${getBorderColor()} border-opacity-80 backdrop-blur-md bg-white/60 dark:bg-[#1A1A1A]/60 border border-gray-200/50 dark:border-gray-800/50 text-gray-800 dark:text-gray-200 flex flex-col`}>
+                    <h2 className="text-2xl font-medium tracking-tight mb-2">{course.title}</h2>
                 </div>
             </Link>
             {isAdminView && (

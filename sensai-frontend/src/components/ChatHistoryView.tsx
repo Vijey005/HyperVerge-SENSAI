@@ -57,6 +57,7 @@ const CodeMessageDisplay = ({ code, language }: { code: string, language?: strin
 interface ChatHistoryViewProps {
     chatHistory: ChatMessage[];
     onViewScorecard: (scorecard: ScorecardItem[]) => void;
+    onShowProgressiveFeedback?: () => void;
     isAiResponding: boolean;
     showPreparingReport: boolean;
     currentQuestionConfig?: any;
@@ -71,6 +72,7 @@ interface ChatHistoryViewProps {
 const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
     chatHistory,
     onViewScorecard,
+    onShowProgressiveFeedback,
     isAiResponding,
     showPreparingReport,
     currentQuestionConfig,
@@ -247,6 +249,21 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
         );
     };
 
+    // Helper to determine if "Review Code Feedback" button should be shown
+    const shouldShowProgressiveFeedback = (message: ChatMessage) => {
+        // Must be AI message with scorecard for a code question
+        if (!(message.sender === 'ai' && message.scorecard && message.scorecard.length > 0)) {
+            return false;
+        }
+        if (currentQuestionConfig?.inputType !== 'code') {
+            return false;
+        }
+        // Show if not a perfect score (sum of score < sum of max_score)
+        const earned = message.scorecard.reduce((acc, item) => acc + (item.score || 0), 0);
+        const max = message.scorecard.reduce((acc, item) => acc + (item.max_score || 0), 0);
+        return earned < max;
+    };
+
     // Helper to check if a message is an error message
     const isErrorMessage = (message: ChatMessage) => {
         return message.sender === 'ai' &&
@@ -300,7 +317,7 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
             <style jsx>{customStyles}</style>
                 <div
                     ref={chatContainerRef}
-                    className="h-full overflow-y-auto w-full hide-scrollbar pb-8 bg-white/60 dark:bg-transparent"
+                    className="h-full overflow-y-auto w-full hide-scrollbar pb-8 bg-transparent dark:bg-transparent"
                 >
                 <div className="flex flex-col space-y-6 px-2">
                     {chatHistory.map((message, index) => (
@@ -353,10 +370,10 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
                                         return 'bg-transparent text-slate-900 dark:bg-transparent dark:text-white border-0 w-[90%]';
                                     }
 
-                                    const textBase = message.sender === 'user'
-                                        ? 'bg-[#f3f4f6] text-slate-900 border border-gray-200 dark:bg-[#333333] dark:text-white dark:border-transparent'
-                                        : 'bg-white text-slate-900 border border-gray-200 dark:bg-[#1A1A1A] dark:text-white dark:border-transparent';
-                                    return `${textBase} max-w-[75%]`;
+                                        const textBase = message.sender === 'user'
+                                            ? 'bg-[#f3f4f6]/80 backdrop-blur-sm text-slate-900 border border-black/5 shadow-sm dark:bg-[#333333]/80 dark:backdrop-blur-md dark:text-white dark:border-white/5'
+                                            : 'bg-white/90 backdrop-blur-sm shadow-sm text-slate-900 border border-black/5 dark:bg-[#1A1A1A]/80 dark:backdrop-blur-md dark:text-white dark:border-white/5';
+                                        return `${textBase} max-w-[75%]`;
                                     })();
 
                                     // Audio + code shouldn't have the extra bubble padding (prevents "double container" look)
@@ -461,6 +478,21 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
                                                         </div>
                                                     )}
 
+                                                    {shouldShowProgressiveFeedback(message) && onShowProgressiveFeedback && (
+                                                        <div className="my-3">
+                                                            <button
+                                                                onClick={onShowProgressiveFeedback}
+                                                                className="bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-700 dark:hover:bg-emerald-600 px-4 py-2 rounded-full text-xs font-semibold shadow-md transition-colors cursor-pointer flex items-center"
+                                                                type="button"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                                                </svg>
+                                                                Review AI Code Feedback
+                                                            </button>
+                                                        </div>
+                                                    )}
+
                                                     {isErrorMessage(message) && onRetry && (
                                                         <div className="my-3">
                                                             <button
@@ -519,7 +551,7 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
                     {/* Show "Preparing report" as an AI message */}
                     {showPreparingReport && (
                         <div className="flex justify-start">
-                            <div className="rounded-2xl px-4 py-3 max-w-[75%] bg-indigo-50 text-indigo-900 border border-indigo-200 dark:bg-[#1A1A1A] dark:text-white dark:border-transparent">
+                            <div className="rounded-2xl px-4 py-3 max-w-[75%] bg-indigo-50/80 backdrop-blur-sm shadow-sm text-indigo-900 border border-indigo-200 dark:bg-[#1A1A1A]/80 dark:backdrop-blur-sm dark:text-white dark:border-white/5">
                                 <div className="flex items-center">
                                     <div className="w-4 h-4 border-2 rounded-full animate-spin mr-3 border-indigo-500 border-t-transparent dark:border-white dark:border-t-transparent"></div>
                                     <div className="flex flex-col">

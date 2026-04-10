@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Tuple, Optional, Dict, Literal, Any
 from datetime import datetime
 
@@ -799,3 +799,52 @@ class UpdateIntegrationRequest(BaseModel):
     access_token: str | None = None
     refresh_token: str | None = None
     expires_at: datetime | None = None
+
+
+# --- Code Evaluation Models (Adaptive Cognitive Feedback Engine) ---
+
+class HintItem(BaseModel):
+    level: int  # 1 to 5
+    text: str
+
+
+class CodeFeedbackBlock(BaseModel):
+    block_start_line: int
+    block_end_line: int
+    flaw_summary: str
+    hints: List[HintItem]
+
+
+class StructuralAnalysis(BaseModel):
+    is_hardcoded: bool = Field(
+        description="True if the user brute-forced the output instead of using logic/loops."
+    )
+    missing_concepts: List[str] = Field(
+        default=[],
+        description="Concepts the user should have used but didn't (e.g., 'for loops', 'recursion')."
+    )
+    structural_penalty_applied: bool = Field(
+        default=False,
+        description="True if the score was capped due to hardcoding detection."
+    )
+
+
+class CodeEvaluationResponse(BaseModel):
+    overall_score: int
+    structural_analysis: StructuralAnalysis
+    feedback_blocks: List[CodeFeedbackBlock]
+
+
+class CognitiveProfile(BaseModel):
+    recurring_weaknesses: List[str] = []
+    strengths: List[str] = []
+    learning_style: str = "Socratic"
+
+
+class CodeEvaluationRequest(BaseModel):
+    code: str
+    language: str
+    cognitive_profile: CognitiveProfile
+    task_id: Optional[int] = None
+    user_id: int = 0
+    user_email: str = ""

@@ -189,7 +189,7 @@ export function Header({
                         {showTryDemoButton && (
                             <button
                                 onClick={handleTryDemoClick}
-                            className="hidden md:block px-6 py-3 text-sm font-medium rounded-full cursor-pointer bg-black/10 dark:bg-white/20 text-black dark:text-white hover:bg-black/20 dark:hover:bg-white/30"
+                            className="hidden md:block px-6 py-3 text-sm font-medium rounded-full cursor-pointer bg-black/5 dark:bg-white/10 text-black dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all duration-300 hover:scale-105"
                             >
                                 Try a demo
                             </button>
@@ -197,7 +197,7 @@ export function Header({
                         {showCreateCourseButton && (
                             <button
                                 onClick={handleButtonClick}
-                            className="hidden md:block px-6 py-3 text-sm font-medium rounded-full hover:opacity-90 transition-opacity focus:outline-none cursor-pointer bg-[#d1d5db] dark:bg-white text-[#1f2937] dark:text-black"
+                            className="hidden md:block px-6 py-3 text-sm font-medium rounded-full hover:shadow-md hover:scale-105 transition-all duration-300 focus:outline-none cursor-pointer bg-[#e5e7eb] dark:bg-white text-[#1f2937] dark:text-black"
                             >
                                 {getButtonText()}
                             </button>

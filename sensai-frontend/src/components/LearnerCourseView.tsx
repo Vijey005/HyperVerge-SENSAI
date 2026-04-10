@@ -999,13 +999,16 @@ export default function LearnerCourseView({
                     completedQuestionIds={localCompletedQuestionIds}
                 />
             ) : (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                    <div>
-                        <h2 className="text-4xl font-light mb-4 text-black dark:text-white">
-                            Your learning adventure awaits!
+                <div className="flex flex-col items-center justify-center py-24 text-center px-4">
+                    <div className="max-w-md bg-white border border-gray-100 shadow-lg rounded-3xl p-10 dark:bg-[#111111] dark:border-white/10 dark:shadow-[0_8px_30px_rgb(0,0,0,0.5)]">
+                        <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-6 dark:bg-blue-900/40 dark:text-blue-400">
+                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                        </div>
+                        <h2 className="text-3xl font-light mb-4 text-black dark:text-white leading-tight font-sans">
+                            Your learning adventure awaits
                         </h2>
-                        <p className="text-gray-400 mb-8">
-                            This course is still being crafted with care. Check back soon to begin your journey.
+                        <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed">
+                            This course is still being crafted with care. Check back soon to begin your journey and unlock new skills.
                         </p>
                     </div>
                 </div>
@@ -1086,7 +1089,7 @@ export default function LearnerCourseView({
                                     const isActiveRow = item.id === activeItem.id && ((item.type !== 'quiz') || !activeItem?.questions || activeItem.questions.length <= 1);
 
                                     // Light mode classes with dark: overrides - clean white design
-                                    let rowClass = 'px-4 py-2 cursor-pointer flex items-center ';
+                                    let rowClass = 'px-4 py-2 cursor-pointer flex items-center transition-all duration-200 ';
                                     if (isActiveRow) {
                                         rowClass += 'bg-gray-100 dark:bg-[#222222] border-l-2 border-gray-900 dark:border-violet-500 shadow-sm dark:shadow-none';
                                     } else if (isItemCompleted) {

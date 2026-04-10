@@ -1,0 +1,51 @@
+# SensAI: Adaptive Cognitive Feedback Engine Architecture
+
+This document explains the end-to-end flow of the Progressive AI Feedback feature we recently built for the SensAI platform. It details how answers are captured on the front-end, evaluated structurally by the OpenAI/Gemini engine on the back-end, and rendered dynamically to the user.
+
+## 1. Answer Capturing & Processing (Frontend)
+The student's interaction begins inside `LearnerQuizView` and `ChatView`, where they submit answers based on the input type.
+
+*   **Code Inputs:**
+    *   The student writes code inside the `Monaco Editor` via `CodeEditorView.tsx`.
+    *   When they hit "Submit", the frontend avoids sending an immediate feedback trigger. Instead, the code block is converted into a standard user message and dispatched to the chat execution pipeline.
+*   **Audio/Text Inputs:**
+    *   Text is captured via a standard textarea.
+    *   Audio is captured via the browser's MediaRecorder API, converted from WebM to a base64 encoded WAV file format, and attached as a payload to the submission pipeline.
+*   **Decoupled Evaluation:**
+    *   The frontend uses an imperative model. Submitting an answer triggers the backend's chat grading system first. The complex UI feedback split-pane logic is deferred until the student explicitly clicks "Review AI Code Feedback," allowing the student to view the base chat response without UI interruption.
+
+## 2. API Transmission to the Backend
+Once the user's input safely reaches the Python/FastAPI backend, it routes through the dynamic evaluation endpoint (e.g., `/ai/code-evaluate` or the system chat pipeline).
+
+*   **Dynamic Context Assembly:** Along with the raw code or text, the frontend passes `cognitiveProfile` JSON data (learning styles, recurring weaknesses, etc.) and the `QuizQuestionConfig` (containing expected output scorecards).
+*   **Pydantic Enforcement:** The API uses strict Pydantic models to guarantee that the LLM engine returns precisely structured JSON parameters. This validates that the structural penalties and progressive hints exist before sending anything back to the student.
+
+## 3. Structural Evaluation & LLM Engine (Backend)
+This is where the SensAI platform executes its "Anti-Hardcoding & Structural Validation." The OpenAI/Gemini engine takes on the persona of an expert instructor.
+
+*   **Anti-Hardcoding Logic:**
+    *   Students frequently try to "cheat" simple output matchers by printing raw duplicate strings instead of using logical loops (e.g., printing 5 stars manually instead of using a `for` loop).
+    *   The LLM structurally reads the AST/logic of the submitted code. If it detects brute force strings replacing required concepts, it flags `is_hardcoded = true`.
+    *   It identifies missing elements and assigns a `structural_penalty` that explicitly caps the total score threshold.
+*   **5-Stage Progressive Hints Generation:**
+    *   Rather than giving away the answer instantly, the LLM maps the specific failing lines of code to a progressive array of 5 hints.
+    *   These hints are generated progressively, scaling from conversational nudges ("Think about what happens if you need to print 1000 lines"), to identifying the missing core concept, to partial pseudo-code blocks.
+    *   This JSON array is embedded into the response metadata alongside the calculated 0/100 score.
+
+## 4. Split-Pane Rendering & Display (Frontend)
+When the JSON response successfully reaches the frontend, the UI initiates the Adaptive Feedback layout.
+
+*   **Dynamic Grid Expansion:**
+    *   The `LearnerQuizView` automatically hides the third-column Terminal Output component and changes the CSS grid template to `1fr 2fr`, making massive horizontal room for the Code and AI Review segments.
+*   **Structural Penalty UI Banner:**
+    *   If `is_hardcoded` is true, the `CodeEditorView.tsx` mounts a bright warning banner explaining the logic failure and specifying the exact missing concepts detected.
+*   **Progressive Hint Interactive Cards:**
+    *   The 5 semantic hints are mapped to individual `ProgressiveHintCard` components.
+    *   The cards are designed safely to scale vertically with optimal padding, allowing students to progressively unlock deep programming knowledge without cognitive overload.
+
+---
+
+### Key Takeaways of the Architecture
+1.  **Stop Cheating Mechanics:** We moved past simple stdout string matching into deep logical analysis.
+2.  **Pedagogically Sound UX:** By defaulting to conversational chat and deferring the deep dive feedback behind a button, the student dictates their own learning pace.
+3.  **Resilient Typesafe Bridge:** Everything traveling between React and FastAPI is deeply bound to TypeScript interfaces and Pydantic validators, ensuring the UI rarely crashes from hallucinated AI output.
