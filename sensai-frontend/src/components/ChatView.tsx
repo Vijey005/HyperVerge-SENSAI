@@ -18,6 +18,7 @@ export interface CodeViewState {
     output: string;
     hasWebLanguages: boolean;
     executionTime?: string;
+    isViewingFeedback?: boolean;
 }
 
 // Define MobileViewChangeEvent interface for the parent component
@@ -53,6 +54,7 @@ interface ChatViewProps {
     showUploadSection?: boolean;
     onFileUploaded?: (file: File) => void;
     onFileDownload?: (fileUuid: string, fileName: string) => void;
+    displayFilter?: 'all' | 'user' | 'ai';
 }
 
 export interface ChatViewHandle {
@@ -86,6 +88,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
     showUploadSection = false,
     onFileUploaded,
     onFileDownload,
+    displayFilter = 'all',
 }, ref) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -102,6 +105,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
 
     // Add state to keep track of the last copied content
     const [lastCopiedContent, setLastCopiedContent] = useState<string>('');
+    const [pendingFeedbackExecution, setPendingFeedbackExecution] = useState(false);
 
     // Determine if this is a coding question
     const isCodingQuestion = currentQuestionConfig?.inputType === 'code';
@@ -537,6 +541,28 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
         }
     }, [toastData.title, toastData.description]);
 
+    const displayChatHistory = currentChatHistory.filter((message) => {
+        if (displayFilter === 'all') return true;
+        return message.sender === displayFilter;
+    });
+
+    // Effect to trigger feedback once CodeEditorView mounts
+    useEffect(() => {
+        if (isViewingCode && pendingFeedbackExecution && codeEditorRef.current) {
+            // Give it a tiny bit of time to fully initialize Monaco
+            const timer = setTimeout(() => {
+                codeEditorRef.current?.evaluateCodeFeedback();
+                setPendingFeedbackExecution(false);
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+    }, [isViewingCode, pendingFeedbackExecution]);
+
+    const handleShowProgressiveFeedback = () => {
+        setPendingFeedbackExecution(true);
+        setIsViewingCode(true);
+    };
+
     // Render the code editor or chat view based on state
     const renderMainContent = () => {
         // If viewing code and not in viewOnly mode, show the code editor
@@ -547,8 +573,22 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
                     initialCode={codeContent}
                     languages={codingLanguages}
                     handleCodeSubmit={handleCodeSubmit}
+                    enableFeedbackMode={true}
                     onCodeRun={handleCodeRun}
                     disableCopyPaste={disableCopyPaste}
+                    onFeedbackVisibilityChange={(isVisible) => {
+                        if (onCodeStateChange) {
+                            onCodeStateChange({
+                                isViewingCode,
+                                isRunning,
+                                previewContent,
+                                output,
+                                hasWebLanguages,
+                                executionTime,
+                                isViewingFeedback: isVisible
+                            });
+                        }
+                    }}
                     onCodeChange={(updatedCode) => {
                         setTimeout(() => {
                             setCodeContent(updatedCode);
@@ -566,7 +606,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
         } else {
             return (
                 <>
-                    {currentChatHistory.length === 0 ? (
+                    {displayChatHistory.length === 0 ? (
                         <ChatPlaceholderView
                             taskType={taskType}
                             isChatHistoryLoaded={isChatHistoryLoaded}
@@ -595,8 +635,9 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(({
                             }}
                         >
                             <ChatHistoryView
-                                chatHistory={currentChatHistory}
+                                chatHistory={displayChatHistory}
                                 onViewScorecard={handleViewScorecard}
+                                onShowProgressiveFeedback={handleShowProgressiveFeedback}
                                 isAiResponding={isAiResponding}
                                 showPreparingReport={showPreparingReport}
                                 currentQuestionConfig={currentQuestionConfig}

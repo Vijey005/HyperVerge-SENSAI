@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState, useEffect } from "react";
 import BlockNoteEditor from "./BlockNoteEditor";
 import ChatView from "./ChatView";
+import ChatHistoryView from "./ChatHistoryView";
 import ScorecardView from "./ScorecardView";
 import { ChatMessage, ScorecardItem } from "../types/quiz";
 import { getDraft, setDraft, deleteDraft } from '@/lib/utils/indexedDB';
@@ -198,7 +199,8 @@ export default function LearnerAssignmentView({
             score: data.score || 0,
             max_score: data.max_score || 4,
             pass_score: data.pass_score || 3,
-            feedback: data.feedback || {}
+            feedback: data.feedback || {},
+            rubric_category: data.rubric_category || data.feedback?.rubric_category
         }));
     }, []);
 
@@ -424,6 +426,7 @@ export default function LearnerAssignmentView({
         });
         return mapped as unknown as ChatMessage[];
     }, [chatHistory, convertScorecardScoresToScorecard]);
+
 
     // Helpers for ChatView handlers
     const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -1159,7 +1162,7 @@ export default function LearnerAssignmentView({
                         </div>
                     </div>
 
-                    <div className="flex-1">
+                    <div>
                         <div
                             className="ml-[-60px]"
                             onCopy={(e) => {
@@ -1194,24 +1197,14 @@ export default function LearnerAssignmentView({
                             )}
                         </div>
                     </div>
-                </div>
 
-                {/* Right: Upload + Chat */}
-                <div className="flex flex-col h-full overflow-auto lg:border-l lg:border-t-0 sm:border-t sm:border-l-0 chat-container bg-white border border-gray-200 dark:bg-[#111111] dark:border-[#222222]">
-                    {isViewingScorecard ? (
-                        /* Use the ScorecardView component */
-                        <ScorecardView
-                            activeScorecard={activeScorecard}
-                            handleBackToChat={handleBackToChat}
-                            lastUserMessage={null}
-                        />
-                    ) : (
-                        /* Use the ChatView component */
+                    <div className="mt-6 pt-4 border-t border-gray-200 dark:border-[#222222] flex-1 min-h-0">
+                        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Your Outputs</div>
                         <div className="flex-1 min-h-0">
                             <ChatView
                                 currentChatHistory={chatHistoryForView}
                                 isAiResponding={isAiResponding}
-                                showPreparingReport={showPreparingReport}
+                                showPreparingReport={false}
                                 isChatHistoryLoaded={isChatHistoryLoaded}
                                 isTestMode={isTestMode}
                                 taskType={'assignment'}
@@ -1228,9 +1221,33 @@ export default function LearnerAssignmentView({
                                 userId={userId}
                                 showUploadSection={needsResubmission}
                                 onFileUploaded={handleFileSubmit}
-                                    onFileDownload={handleFileDownload}
+                                onFileDownload={handleFileDownload}
+                                displayFilter="user"
                             />
                         </div>
+                    </div>
+                </div>
+
+                {/* Right: Upload + Chat */}
+                <div className="flex flex-col h-full overflow-auto lg:border-l lg:border-t-0 sm:border-t sm:border-l-0 chat-container bg-white border border-gray-200 dark:bg-[#111111] dark:border-[#222222]">
+                    {isViewingScorecard ? (
+                        /* Use the ScorecardView component */
+                        <ScorecardView
+                            activeScorecard={activeScorecard}
+                            handleBackToChat={handleBackToChat}
+                            lastUserMessage={null}
+                        />
+                    ) : (
+                        <ChatHistoryView
+                            chatHistory={chatHistoryForView}
+                            onViewScorecard={handleViewScorecard}
+                            isAiResponding={isAiResponding}
+                            showPreparingReport={showPreparingReport}
+                            currentQuestionConfig={currentQuestionConfig}
+                            taskType="assignment"
+                            onFileDownload={handleFileDownload}
+                            messageFilter="ai"
+                        />
                     )}
                 </div>
             </div>

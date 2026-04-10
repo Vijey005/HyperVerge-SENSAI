@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Tuple, Optional, Dict, Literal, Any
 from datetime import datetime
 
@@ -799,3 +799,48 @@ class UpdateIntegrationRequest(BaseModel):
     access_token: str | None = None
     refresh_token: str | None = None
     expires_at: datetime | None = None
+
+
+# Code evaluation models for coding-assessment feedback mode
+class CodeFeedbackBlock(BaseModel):
+    block_start_line: int
+    block_end_line: int
+    flaw_summary: str
+    hints: List[str] = Field(
+        description="Exactly three progressive hints (Level 1 to Level 3) for this flaw."
+    )
+
+
+class StructuralAnalysis(BaseModel):
+    is_hardcoded: bool = Field(
+        description="True when output is hardcoded instead of solving with required logic."
+    )
+    missing_concepts: List[str] = Field(
+        default=[],
+        description="Required concepts missing from the submission (for example: loops).",
+    )
+    structural_penalty_applied: bool = Field(
+        default=False,
+        description="True when score is capped due to hardcoding detection.",
+    )
+
+
+class CodeEvaluationResponse(BaseModel):
+    overall_score: int
+    structural_analysis: StructuralAnalysis
+    feedback_blocks: List[CodeFeedbackBlock]
+
+
+class CognitiveProfile(BaseModel):
+    recurring_weaknesses: List[str] = []
+    strengths: List[str] = []
+    learning_style: str = "Socratic"
+
+
+class CodeEvaluationRequest(BaseModel):
+    code: str
+    language: str
+    cognitive_profile: CognitiveProfile
+    task_id: Optional[int] = None
+    user_id: int = 0
+    user_email: str = ""

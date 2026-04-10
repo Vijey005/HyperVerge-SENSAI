@@ -57,6 +57,7 @@ const CodeMessageDisplay = ({ code, language }: { code: string, language?: strin
 interface ChatHistoryViewProps {
     chatHistory: ChatMessage[];
     onViewScorecard: (scorecard: ScorecardItem[]) => void;
+    onShowProgressiveFeedback?: () => void;
     isAiResponding: boolean;
     showPreparingReport: boolean;
     currentQuestionConfig?: any;
@@ -66,11 +67,13 @@ interface ChatHistoryViewProps {
     onShowLearnerViewChange?: (show: boolean) => void;
     isAdminView?: boolean;
     onFileDownload?: (fileUuid: string, fileName: string) => void;
+    messageFilter?: 'all' | 'user' | 'ai';
 }
 
 const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
     chatHistory,
     onViewScorecard,
+    onShowProgressiveFeedback,
     isAiResponding,
     showPreparingReport,
     currentQuestionConfig,
@@ -80,8 +83,13 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
     onShowLearnerViewChange,
     isAdminView = false,
     onFileDownload,
+    messageFilter = 'all',
 }) => {
     const chatContainerRef = useRef<HTMLDivElement>(null);
+    const filteredChatHistory = chatHistory.filter((message) => {
+        if (messageFilter === 'all') return true;
+        return message.sender === messageFilter;
+    });
 
     // State for current thinking message
     const [currentThinkingMessage, setCurrentThinkingMessage] = useState("");
@@ -195,7 +203,7 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
         if (chatContainerRef.current) {
             chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
         }
-    }, [chatHistory]);
+    }, [filteredChatHistory]);
 
     // Custom styles for the animations
     const customStyles = `
@@ -247,6 +255,21 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
         );
     };
 
+    // Helper to determine if "Review Code Feedback" button should be shown
+    const shouldShowProgressiveFeedback = (message: ChatMessage) => {
+        // Must be AI message with scorecard for a code question
+        if (!(message.sender === 'ai' && message.scorecard && message.scorecard.length > 0)) {
+            return false;
+        }
+        if (currentQuestionConfig?.inputType !== 'code') {
+            return false;
+        }
+        // Show if not a perfect score (sum of score < sum of max_score)
+        const earned = message.scorecard.reduce((acc, item) => acc + (item.score || 0), 0);
+        const max = message.scorecard.reduce((acc, item) => acc + (item.max_score || 0), 0);
+        return earned < max;
+    };
+
     // Helper to check if a message is an error message
     const isErrorMessage = (message: ChatMessage) => {
         return message.sender === 'ai' &&
@@ -254,7 +277,7 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
     };
 
     // Find the last AI message index
-    const lastAiMessageIndex = chatHistory.reduce((lastIndex, message, index) => {
+    const lastAiMessageIndex = filteredChatHistory.reduce((lastIndex, message, index) => {
         return message.sender === 'ai' ? index : lastIndex;
     }, -1);
 
@@ -303,13 +326,13 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
                     className="h-full overflow-y-auto w-full hide-scrollbar pb-8 bg-white/60 dark:bg-transparent"
                 >
                 <div className="flex flex-col space-y-6 px-2">
-                    {chatHistory.map((message, index) => (
+                    {filteredChatHistory.map((message, index) => (
                         <div key={message.id}>
                             {(() => {
                                 const currentDate = toSafeDate((message as any).timestamp);
                                 if (!currentDate) return null;
 
-                                const prevDate = index > 0 ? toSafeDate((chatHistory[index - 1] as any)?.timestamp) : null;
+                                const prevDate = index > 0 ? toSafeDate((filteredChatHistory[index - 1] as any)?.timestamp) : null;
                                 const currentKey = getLocalDateKey(currentDate);
                                 const prevKey = prevDate ? getLocalDateKey(prevDate) : null;
                                 const shouldShow = index === 0 || currentKey !== prevKey;
@@ -457,6 +480,21 @@ const ChatHistoryView: React.FC<ChatHistoryViewProps> = ({
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                                                                 </svg>
                                                                 View Report
+                                                            </button>
+                                                        </div>
+                                                    )}
+
+                                                    {shouldShowProgressiveFeedback(message) && onShowProgressiveFeedback && (
+                                                        <div className="my-3">
+                                                            <button
+                                                                onClick={onShowProgressiveFeedback}
+                                                                className="bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-700 dark:hover:bg-emerald-600 px-4 py-2 rounded-full text-xs font-semibold shadow-md transition-colors cursor-pointer flex items-center"
+                                                                type="button"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                                                </svg>
+                                                                Review AI Code Feedback
                                                             </button>
                                                         </div>
                                                     )}

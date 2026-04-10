@@ -1,9 +1,38 @@
-import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
 import Editor, { Monaco } from '@monaco-editor/react';
 import type { editor as MonacoEditor, IDisposable, IKeyboardEvent } from 'monaco-editor';
-import { Play, Send, Terminal, ArrowLeft, X } from 'lucide-react';
+import { Play, Send, Terminal, ArrowLeft, X, Loader2, AlertTriangle } from 'lucide-react';
 import Toast from './Toast';
 import { useThemePreference } from '@/lib/hooks/useThemePreference';
+import HintAccordion from './HintAccordion';
+
+interface CodeFeedbackBlock {
+    block_start_line: number;
+    block_end_line: number;
+    flaw_summary: string;
+    hints: string[];
+}
+
+// Structural integrity analysis from the LLM
+interface StructuralAnalysis {
+    is_hardcoded: boolean;
+    missing_concepts: string[];
+    structural_penalty_applied: boolean;
+}
+
+// Response shape from the /ai/code-evaluate endpoint
+interface CodeEvaluationResponse {
+    overall_score: number;
+    structural_analysis: StructuralAnalysis;
+    feedback_blocks: CodeFeedbackBlock[];
+}
+
+// The Compressed Memory Payload
+interface CognitiveProfile {
+    recurring_weaknesses: string[];
+    strengths: string[];
+    learning_style: string;
+}
 
 interface CodeEditorViewProps {
     initialCode?: Record<string, string>;
@@ -12,11 +41,18 @@ interface CodeEditorViewProps {
     onCodeRun?: (previewContent: string, output: string, executionTime?: string, isRunning?: boolean) => void;
     disableCopyPaste?: boolean;
     onCodeChange?: (code: Record<string, string>) => void;
+    enableFeedbackMode?: boolean;
+    cognitiveProfile?: CognitiveProfile;
+    userId?: number;
+    userEmail?: string;
+    taskId?: number;
+    onFeedbackVisibilityChange?: (isVisible: boolean) => void;
 }
 
 // Add interface for the ref methods
 export interface CodeEditorViewHandle {
     getCurrentCode: () => Record<string, string>;
+    evaluateCodeFeedback: () => void;
 }
 
 // Preview component that can be used in a separate column
@@ -418,6 +454,16 @@ const CodeEditorView = forwardRef<CodeEditorViewHandle, CodeEditorViewProps>(({
     onCodeRun,
     disableCopyPaste = false,
     onCodeChange,
+    enableFeedbackMode = false,
+    cognitiveProfile = {
+        recurring_weaknesses: ['loop boundaries', 'edge cases'],
+        strengths: ['clean syntax'],
+        learning_style: 'Socratic',
+    },
+    userId,
+    userEmail,
+    taskId,
+    onFeedbackVisibilityChange
 }, ref) => {
     const { isDarkMode } = useThemePreference();
     // Check if React is in the original languages array
@@ -481,6 +527,13 @@ const CodeEditorView = forwardRef<CodeEditorViewHandle, CodeEditorViewProps>(({
     const [stdInput, setStdInput] = useState<string>('');
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+    const decorationsCollectionRef = useRef<MonacoEditor.IEditorDecorationsCollection | null>(null);
+
+    // Feedback state for the Adaptive Cognitive Feedback Engine
+    const [feedbackData, setFeedbackData] = useState<CodeEvaluationResponse | null>(null);
+    const [isEvaluating, setIsEvaluating] = useState(false);
+    const [activeCardIndex, setActiveCardIndex] = useState<number | null>(null);
+
     // Monaco can crash during Next.js Fast Refresh (hot reload) with:
     // "Cannot read properties of undefined (reading 'domNode')"
     // A minimal, dev-only workaround is to force a clean remount of the Editor on refresh.
@@ -1103,10 +1156,99 @@ const CodeEditorView = forwardRef<CodeEditorViewHandle, CodeEditorViewProps>(({
         }
     };
 
-    // Submit the code
-    const handleSubmit = () => {
+    // Highlight a block of code in the Monaco editor via decorations
+    const highlightCodeBlock = useCallback((startLine: number, endLine: number) => {
+        const editor = editorRef.current;
+        if (!editor || !decorationsCollectionRef.current) return;
+
+        decorationsCollectionRef.current.set([
+            {
+                range: {
+                    startLineNumber: startLine,
+                    startColumn: 1,
+                    endLineNumber: endLine,
+                    endColumn: 1,
+                },
+                options: {
+                    isWholeLine: true,
+                    className: 'code-flaw-highlight',
+                    glyphMarginClassName: 'code-flaw-glyph',
+                    overviewRuler: {
+                        color: '#ef4444',
+                        position: 1, // monaco.editor.OverviewRulerLane.Center
+                    },
+                },
+            },
+        ]);
+
+        // Scroll the editor to reveal the highlighted block
+        editor.revealLineInCenter(startLine);
+    }, []);
+
+    const clearHighlights = useCallback(() => {
+        if (decorationsCollectionRef.current) {
+            decorationsCollectionRef.current.clear();
+        }
+    }, []);
+
+    const evaluateCodeFeedback = async () => {
+        if (!enableFeedbackMode) return;
+        
+        setIsEvaluating(true);
+        setFeedbackData(null);
+        clearHighlights();
+
+        try {
+            // Combine all code into a single string for multi-language submissions
+            const codeString = Object.entries(code)
+                .filter(([, content]) => content.trim())
+                .map(([lang, content]) => {
+                    if (Object.keys(code).length === 1) return content;
+                    return `// ${lang.toUpperCase()}\n${content}`;
+                })
+                .join('\n\n');
+
+            const response = await fetch(
+                `${process.env.NEXT_PUBLIC_BACKEND_URL}/ai/code-evaluate`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        code: codeString,
+                        language: activeLanguage,
+                        cognitive_profile: cognitiveProfile,
+                        task_id: taskId ?? null,
+                        user_id: userId ?? 0,
+                        user_email: userEmail ?? '',
+                    }),
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(`Evaluation failed: ${response.status}`);
+            }
+
+            const data: CodeEvaluationResponse = await response.json();
+            setFeedbackData(data);
+        } catch (error) {
+            console.error('Code evaluation error:', error);
+            setToastData({
+                title: 'Evaluation Failed',
+                description: 'Could not get AI feedback. Please try again.',
+                emoji: '⚠️',
+            });
+            setShowToast(true);
+        } finally {
+            setIsEvaluating(false);
+        }
+    };
+
+    // Submit the code (just sends it to the chat flow)
+    const handleSubmit = async () => {
         handleCodeSubmit(code);
     };
+
+
 
     // Monaco editor setup
     const setupPastePreventionHandler = () => {
@@ -1187,6 +1329,7 @@ const CodeEditorView = forwardRef<CodeEditorViewHandle, CodeEditorViewProps>(({
 
     const handleEditorDidMount = (editor: any, monaco: Monaco) => {
         editorRef.current = editor;
+        decorationsCollectionRef.current = editor.createDecorationsCollection([]);
         editor.focus();
         setupPastePreventionHandler();
     };
@@ -1276,11 +1419,26 @@ const CodeEditorView = forwardRef<CodeEditorViewHandle, CodeEditorViewProps>(({
     // Use useImperativeHandle to expose getCurrentCode method
     useImperativeHandle(ref, () => ({
         getCurrentCode: () => code,
+        evaluateCodeFeedback: () => evaluateCodeFeedback(),
     }));
+
+    // Check if we should show the feedback sidebar
+    const showFeedbackSidebar = enableFeedbackMode && (feedbackData || isEvaluating);
+
+    const onFeedbackVisibilityChangeRef = useRef(onFeedbackVisibilityChange);
+    useEffect(() => {
+        onFeedbackVisibilityChangeRef.current = onFeedbackVisibilityChange;
+    }, [onFeedbackVisibilityChange]);
+
+    useEffect(() => {
+        if (onFeedbackVisibilityChangeRef.current) {
+            onFeedbackVisibilityChangeRef.current(!!showFeedbackSidebar);
+        }
+    }, [showFeedbackSidebar]);
 
     return (
         <div
-            className={`flex flex-col h-full overflow-auto`}
+            className={`flex flex-col h-full overflow-hidden`}
             style={{ ['--code-mobile-preview-bg' as any]: isDarkMode ? '#111111' : '#ffffff' }}
         >
             {/* Toast notification for input validation */}
@@ -1292,6 +1450,22 @@ const CodeEditorView = forwardRef<CodeEditorViewHandle, CodeEditorViewProps>(({
                 onClose={() => setShowToast(false)}
                 isMobileView={isMobileView}
             />
+
+            {/* Monaco decoration CSS for code flaw highlighting */}
+            <style jsx global>{`
+                .code-flaw-highlight {
+                    background-color: rgba(239, 68, 68, 0.12) !important;
+                    border-left: 3px solid #ef4444 !important;
+                }
+                .dark .code-flaw-highlight {
+                    background-color: rgba(239, 68, 68, 0.18) !important;
+                }
+                .code-flaw-glyph {
+                    background-color: #ef4444;
+                    width: 3px !important;
+                    margin-left: 3px;
+                }
+            `}</style>
 
             {/* Mobile-specific styles */}
             <style jsx global>{`
@@ -1379,46 +1553,159 @@ const CodeEditorView = forwardRef<CodeEditorViewHandle, CodeEditorViewProps>(({
                 </div>
             )}
 
-            {/* Main editor area with potential split for input */}
-            <div className="flex-1 overflow-auto flex flex-col">
-                {/* Code editor */}
-                <div className={`${showInputPanel ? 'flex-none' : 'flex-1'} ${showInputPanel ? 'h-2/3' : ''}`}>
-                    <Editor
-                        key={editorInstanceKey}
-                        height="100%"
-                        language={getMonacoLanguage(activeLanguage)}
-                        value={code[activeLanguage]}
-                        onChange={handleCodeChange}
-                        theme={isDarkMode ? "vs-dark" : "vs"}
-                        options={{
-                            minimap: { enabled: false },
-                            fontSize: 12,
-                            scrollBeyondLastLine: false,
-                            automaticLayout: true,
-                            tabSize: 2,
-                            wordWrap: 'on',
-                            lineNumbers: 'off',
-                        }}
-                        onMount={handleEditorDidMount}
-                    />
+            {/* Main editor area with potential split for input — wrapped in flex for feedback sidebar */}
+            <div className={`flex-1 min-h-0 flex ${showFeedbackSidebar && !isMobileView ? 'flex-row' : 'flex-col'}`}>
+                {/* Left: Code editor column */}
+                <div className={`flex flex-col min-h-0 ${showFeedbackSidebar && !isMobileView ? 'w-[60%] border-r border-gray-200 dark:border-[#2a2a2a]' : 'flex-1'}`}>
+                    {/* Code editor */}
+                    <div className={`${showInputPanel ? 'flex-none h-2/3' : 'flex-1'} min-h-0`}>
+                        <Editor
+                            key={editorInstanceKey}
+                            height="100%"
+                            language={getMonacoLanguage(activeLanguage)}
+                            value={code[activeLanguage]}
+                            onChange={handleCodeChange}
+                            theme={isDarkMode ? "vs-dark" : "vs"}
+                            options={{
+                                minimap: { enabled: false },
+                                fontSize: 12,
+                                scrollBeyondLastLine: false,
+                                automaticLayout: true,
+                                tabSize: 2,
+                                wordWrap: 'on',
+                                lineNumbers: enableFeedbackMode ? 'on' : 'off',
+                                glyphMargin: enableFeedbackMode,
+                            }}
+                            onMount={handleEditorDidMount}
+                        />
+                    </div>
+
+                    {/* Input panel (conditionally shown) */}
+                    {showInputPanel && (
+                        <div className="flex-none h-1/3 border-t flex flex-col border-gray-200 dark:border-[#444444]">
+                            <div className={`px-4 py-2 text-sm font-medium flex justify-between items-center ${inputError ? 'bg-rose-100 dark:bg-red-800 text-rose-900 dark:text-white' : 'bg-gray-100 dark:bg-[#222222] text-gray-900 dark:text-white'}`}>
+                                <span>{inputError ? 'Input Required' : 'Add inputs for testing'}</span>
+                            </div>
+                            <textarea
+                                ref={inputRef}
+                                className={`flex-1 p-4 resize-none font-mono text-sm bg-white dark:bg-[#1E1E1E] text-slate-900 dark:text-white ${inputError ? 'border border-red-500' : 'border border-gray-200 dark:border-transparent'}`}
+                                value={stdInput}
+                                onChange={(e) => {
+                                    setStdInput(e.target.value);
+                                    setInputError(false); // Clear error on input change
+                                }}
+                                placeholder="Add every input to your program in a new line"
+                            />
+                        </div>
+                    )}
                 </div>
 
-                {/* Input panel (conditionally shown) */}
-                {showInputPanel && (
-                    <div className="flex-none h-1/3 border-t flex flex-col border-gray-200 dark:border-[#444444]">
-                        <div className={`px-4 py-2 text-sm font-medium flex justify-between items-center ${inputError ? 'bg-rose-100 dark:bg-red-800 text-rose-900 dark:text-white' : 'bg-gray-100 dark:bg-[#222222] text-gray-900 dark:text-white'}`}>
-                            <span>{inputError ? 'Input Required' : 'Add inputs for testing'}</span>
+                {/* Right: Feedback sidebar (30%) — only shown in feedback mode */}
+                {showFeedbackSidebar && !isMobileView && (
+                    <div className="w-[40%] flex flex-col overflow-hidden bg-gray-50 dark:bg-[#141414]">
+                        {/* Sidebar header */}
+                        <div className="px-4 py-3 border-b border-gray-200 dark:border-[#2a2a2a] bg-white dark:bg-[#1a1a1a]">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                                    AI Feedback
+                                </h3>
+                                {feedbackData && (
+                                    <div className={`
+                                        px-2.5 py-1 rounded-full text-xs font-bold
+                                        ${feedbackData.overall_score >= 80
+                                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                            : feedbackData.overall_score >= 50
+                                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                        }
+                                    `}>
+                                        Score: {feedbackData.overall_score}/100
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <textarea
-                            ref={inputRef}
-                            className={`flex-1 p-4 resize-none font-mono text-sm bg-white dark:bg-[#1E1E1E] text-slate-900 dark:text-white ${inputError ? 'border border-red-500' : 'border border-gray-200 dark:border-transparent'}`}
-                            value={stdInput}
-                            onChange={(e) => {
-                                setStdInput(e.target.value);
-                                setInputError(false); // Clear error on input change
-                            }}
-                            placeholder="Add every input to your program in a new line"
-                        />
+
+                        {/* Sidebar content */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                            {isEvaluating ? (
+                                <div className="flex flex-col items-center justify-center h-full gap-3">
+                                    <Loader2 size={24} className="animate-spin text-gray-400 dark:text-gray-500" />
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                                        Analyzing your code...
+                                    </p>
+                                </div>
+                            ) : feedbackData && feedbackData.feedback_blocks.length > 0 ? (
+                                <>
+                                    {/* Structural Warning Banner — shown when hardcoding is detected */}
+                                    {feedbackData.structural_analysis?.is_hardcoded && (
+                                        <div className="bg-yellow-500/10 border border-yellow-500/50 text-yellow-600 dark:text-yellow-400 p-3.5 rounded-lg flex items-start gap-3">
+                                            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-yellow-500" />
+                                            <div>
+                                                <h4 className="font-bold text-sm">Hardcoding Detected!</h4>
+                                                <p className="text-xs mt-1.5 leading-relaxed opacity-90">
+                                                    Your code produces the correct output, but it doesn&apos;t use the right logic.
+                                                    {feedbackData.structural_analysis.missing_concepts.length > 0 && (
+                                                        <>
+                                                            {' '}You are missing key concepts:{' '}
+                                                            <span className="font-semibold">
+                                                                {feedbackData.structural_analysis.missing_concepts.join(', ')}
+                                                            </span>.
+                                                        </>
+                                                    )}
+                                                </p>
+                                                {feedbackData.structural_analysis.structural_penalty_applied && (
+                                                    <p className="text-xs mt-1.5 font-medium opacity-75">
+                                                        ⚠️ Score capped at 20/100 due to structural penalty.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {feedbackData.feedback_blocks.map((block, idx) => {
+                                        const hints = Array.isArray(block.hints)
+                                            ? block.hints.filter((hint) => typeof hint === 'string').slice(0, 3)
+                                            : [];
+
+                                        return (
+                                            <div
+                                                key={`${block.block_start_line}-${block.block_end_line}-${idx}`}
+                                                className={`rounded-lg border p-3 transition-colors ${activeCardIndex === idx
+                                                    ? 'border-red-300 bg-red-50/40 dark:border-red-500/50 dark:bg-red-900/10'
+                                                    : 'border-gray-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/30'
+                                                    }`}
+                                                onMouseEnter={() => {
+                                                    setActiveCardIndex(idx);
+                                                    highlightCodeBlock(block.block_start_line, block.block_end_line);
+                                                }}
+                                                onMouseLeave={() => {
+                                                    setActiveCardIndex(null);
+                                                    clearHighlights();
+                                                }}
+                                            >
+                                                <div className="text-xs font-semibold text-slate-900 dark:text-white">
+                                                    {block.flaw_summary}
+                                                </div>
+                                                <div className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                                    Lines {block.block_start_line}-{block.block_end_line}
+                                                </div>
+                                                <HintAccordion hints={hints} className="mt-2" />
+                                            </div>
+                                        );
+                                    })}
+                                </>
+                            ) : feedbackData && feedbackData.feedback_blocks.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
+                                    <div className="text-3xl">🎉</div>
+                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        No critical flaws found!
+                                    </p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                        Your code looks good. Keep up the great work.
+                                    </p>
+                                </div>
+                            ) : null}
+                        </div>
                     </div>
                 )}
             </div>

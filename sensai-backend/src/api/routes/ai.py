@@ -1,7 +1,7 @@
 import os
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from typing import AsyncGenerator, Optional, Dict
+from typing import AsyncGenerator, Optional, Dict, Literal
 import json
 from copy import deepcopy
 from pydantic import BaseModel, Field, create_model
@@ -11,6 +11,8 @@ from api.models import (
     ChatResponseType,
     TaskType,
     QuestionType,
+    CodeEvaluationRequest,
+    CodeEvaluationResponse,
 )
 from api.llm import (
     run_llm_with_openai,
@@ -43,6 +45,7 @@ from api.prompts.objective_question import OBJECTIVE_QUESTION_SYSTEM_PROMPT, OBJ
 from api.prompts.subjective_question import SUBJECTIVE_QUESTION_SYSTEM_PROMPT, SUBJECTIVE_QUESTION_USER_PROMPT
 from api.prompts.doubt_solving import DOUBT_SOLVING_SYSTEM_PROMPT, DOUBT_SOLVING_USER_PROMPT
 from api.prompts.assignment import ASSIGNMENT_SYSTEM_PROMPT, ASSIGNMENT_USER_PROMPT
+from api.prompts.code_evaluation import CODE_EVALUATION_SYSTEM_PROMPT, CODE_EVALUATION_USER_PROMPT
 
 router = APIRouter()
 
@@ -572,10 +575,16 @@ async def ai_response_for_question(request: AIChatRequest):
                         wrong: Optional[str] = Field(
                             description="What needs improvement in the student's response for this category based on the scoring criteria"
                         )
+                        hints: Optional[list[str]] = Field(
+                            description="Three progressively specific hints to help the student fix the issue"
+                        )
 
                     class Row(BaseModel):
                         feedback: Feedback = Field(
                             description="Detailed feedback for the student's response for this category"
+                        )
+                        rubric_category: Optional[Literal["Correctness", "Efficiency", "Readability"]] = Field(
+                            description="Rubric category for this criterion; must be one of: Correctness, Efficiency, Readability"
                         )
                         score: float = Field(
                             description="Score given within the min/max range for this category based on the student's response - the score given should be in alignment with the feedback provided"
@@ -707,6 +716,84 @@ async def ai_response_for_question(request: AIChatRequest):
         stream_response(),
         media_type="application/x-ndjson",
     )
+
+
+@router.post("/code-evaluate")
+async def ai_code_evaluate(request: CodeEvaluationRequest):
+    """
+    Evaluate coding answers with structural analysis and progressive hinting.
+    """
+    with langfuse.start_as_current_span(name="code_evaluation") as trace:
+        metadata = {
+            "task_id": request.task_id,
+            "user_id": request.user_id,
+            "user_email": request.user_email,
+            "language": request.language,
+        }
+
+        cognitive_profile_str = json.dumps(request.cognitive_profile.model_dump())
+
+        messages = compile_prompt(
+            CODE_EVALUATION_SYSTEM_PROMPT,
+            CODE_EVALUATION_USER_PROMPT,
+            code=request.code,
+            language=request.language,
+            cognitive_profile=cognitive_profile_str,
+        )
+
+        model = openai_plan_to_model_name["text"]
+        llm_input = (
+            f"# Code ({request.language})\n\n"
+            f"```{request.language}\n{request.code}\n```\n\n"
+            f"# Cognitive Profile\n\n{cognitive_profile_str}"
+        )
+
+        with langfuse.start_as_current_observation(
+            as_type="generation", name="code_evaluation_response"
+        ) as observation:
+            try:
+                result = await run_llm_with_openai(
+                    model=model,
+                    messages=messages,
+                    response_model=CodeEvaluationResponse,
+                    max_output_tokens=8192,
+                )
+
+                llm_output = result.model_dump()
+
+                observation.update(
+                    input=llm_input,
+                    output=llm_output,
+                    metadata={
+                        "prompt_name": "code-evaluation",
+                        "input": llm_input,
+                    },
+                )
+
+                session_id = f"code_eval_{request.task_id}_{request.user_id}"
+                metadata["output"] = llm_output
+                trace.update_trace(
+                    user_id=str(request.user_id),
+                    session_id=session_id,
+                    metadata=metadata,
+                    input=llm_input,
+                    output=llm_output,
+                )
+
+                return llm_output
+            except Exception as e:
+                observation.update(
+                    input=llm_input,
+                    output=str(e),
+                    metadata={
+                        "prompt_name": "code-evaluation",
+                        "error": str(e),
+                    },
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Code evaluation failed: {str(e)}",
+                )
 
 
 @router.post("/assignment")
@@ -890,10 +977,16 @@ async def ai_response_for_assignment(request: AIChatRequest):
                 wrong: Optional[str] = Field(
                     description="What needs improvement in the student's response for this category based on the scoring criteria"
                 )
+                hints: Optional[list[str]] = Field(
+                    description="Three progressively specific hints to help the student fix the issue"
+                )
 
             class KeyAreaScore(BaseModel):
                 feedback: Feedback = Field(
                     description="Detailed feedback for the student's response for this category"
+                )
+                rubric_category: Optional[Literal["Correctness", "Efficiency", "Readability"]] = Field(
+                    description="Rubric category for this key area; must be one of: Correctness, Efficiency, Readability"
                 )
                 score: float = Field(
                     description="Score given within the min/max range for this category based on the student's response - the score given should be in alignment with the feedback provided"

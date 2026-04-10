@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ScorecardItem } from '../types/quiz';
+import { STANDARD_RUBRIC, inferRubricCategory, normalizeRubricCategory, RubricCategory } from '../lib/utils/rubric';
+import HintAccordion from './HintAccordion';
 
 export interface LearnerScorecardProps {
     scorecard: ScorecardItem[];
@@ -14,6 +16,56 @@ const LearnerScorecard: React.FC<LearnerScorecardProps> = ({
     const [expandedIndices, setExpandedIndices] = useState<number[]>(
         scorecard.map((_, index) => index)
     );
+
+    const rubricSummaries = useMemo(() => {
+        const totals: Record<RubricCategory, { score: number; max: number; pass: number }> = {
+            Correctness: { score: 0, max: 0, pass: 0 },
+            Efficiency: { score: 0, max: 0, pass: 0 },
+            Readability: { score: 0, max: 0, pass: 0 }
+        };
+
+        scorecard.forEach((item) => {
+            const normalized = normalizeRubricCategory(item.rubric_category);
+            const rubricCategory = normalized || inferRubricCategory(item.category);
+            totals[rubricCategory].score += item.score || 0;
+            totals[rubricCategory].max += item.max_score || 0;
+            totals[rubricCategory].pass += item.pass_score || 0;
+        });
+
+        return STANDARD_RUBRIC.categories.map((category) => {
+            const total = totals[category.key];
+            const maxScore = total.max;
+            const score = total.score;
+            const passScore = total.pass;
+            const percentage = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+            const status = maxScore === 0
+                ? 'suboptimal'
+                : score < passScore
+                    ? 'fail'
+                    : score < maxScore
+                        ? 'suboptimal'
+                        : 'pass';
+
+            return {
+                ...category,
+                score,
+                maxScore,
+                passScore,
+                percentage,
+                status
+            };
+        });
+    }, [scorecard]);
+
+    const getStatusStyle = (status: 'fail' | 'suboptimal' | 'pass') => {
+        if (status === 'pass') {
+            return { stroke: 'stroke-emerald-500', text: 'text-emerald-600', label: 'Passed' };
+        }
+        if (status === 'suboptimal') {
+            return { stroke: 'stroke-amber-500', text: 'text-amber-600', label: 'Sub-optimal' };
+        }
+        return { stroke: 'stroke-rose-500', text: 'text-rose-600', label: 'Critical Fail' };
+    };
 
     if (!scorecard || scorecard.length === 0) {
         return null;
@@ -34,6 +86,53 @@ const LearnerScorecard: React.FC<LearnerScorecardProps> = ({
 
     return (
         <div className={`pt-6 ${className}`}>
+            <div className="rounded-xl p-5 shadow-sm mb-6 bg-white border border-gray-200 dark:bg-zinc-900 dark:border-transparent">
+                <h2 className="text-lg font-light mb-4 text-slate-900 dark:text-white">Rubric Scorecard</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {rubricSummaries.map((item) => {
+                        const statusStyle = getStatusStyle(item.status as 'fail' | 'suboptimal' | 'pass');
+                        return (
+                            <div
+                                key={item.key}
+                                className="rounded-lg border border-gray-200 dark:border-zinc-800 p-4 flex items-center justify-between"
+                            >
+                                <div className="pr-3">
+                                    <div className="text-sm font-medium text-slate-900 dark:text-white">{item.label}</div>
+                                    <div className="text-xs text-gray-600 dark:text-zinc-400">{item.description}</div>
+                                    <div className={`mt-2 text-xs font-medium ${statusStyle.text}`}>{statusStyle.label}</div>
+                                </div>
+                                <div className="w-16 h-16 rounded-full flex items-center justify-center relative">
+                                    <svg className="w-16 h-16 -rotate-90" viewBox="0 0 36 36">
+                                        <circle
+                                            cx="18"
+                                            cy="18"
+                                            r="16"
+                                            fill="none"
+                                            className="stroke-gray-200 dark:stroke-zinc-800"
+                                            strokeWidth="2"
+                                        ></circle>
+                                        <circle
+                                            cx="18"
+                                            cy="18"
+                                            r="16"
+                                            fill="none"
+                                            strokeDasharray="100"
+                                            strokeDashoffset={100 - item.percentage}
+                                            className={statusStyle.stroke}
+                                            strokeWidth="2"
+                                            strokeLinecap="round"
+                                        ></circle>
+                                    </svg>
+                                    <div className="absolute text-sm font-medium text-slate-900 dark:text-white">
+                                        {item.percentage}%
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
             {/* Summary card */}
             <div className="rounded-xl p-5 shadow-sm mb-6 bg-white border border-gray-200 dark:bg-zinc-900 dark:border-transparent">
                 <h2 className="text-lg font-light mb-4 text-slate-900 dark:text-white">Performance Summary</h2>
@@ -189,6 +288,7 @@ const LearnerScorecard: React.FC<LearnerScorecardProps> = ({
                                                     <div>
                                                         <h4 className="text-xs font-medium mb-1 text-amber-800 dark:text-amber-300">Areas for improvement</h4>
                                                         <p className="text-xs text-amber-700 dark:text-amber-300/80">{item.feedback.wrong}</p>
+                                                        <HintAccordion hints={item.feedback.hints} />
                                                     </div>
                                                 </div>
                                             </div>

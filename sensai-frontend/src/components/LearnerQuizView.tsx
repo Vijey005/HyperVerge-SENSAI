@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, MoreVertical, Maximize2, Minimize2, MessageC
 import BlockNoteEditor from "./BlockNoteEditor";
 import { QuizQuestion, ChatMessage, ScorecardItem, AIResponse, QuizQuestionConfig } from "../types/quiz";
 import ChatView, { CodeViewState, ChatViewHandle } from './ChatView';
+import ChatHistoryView from './ChatHistoryView';
 import ScorecardView from './ScorecardView';
 import ConfirmationDialog from './ConfirmationDialog';
 import { getKnowledgeBaseContent } from './QuizEditor';
@@ -1154,9 +1155,10 @@ export default function LearnerQuizView({
                                 // Only now hide the preparing report message
                                 setTimeout(() => setShowPreparingReport(false), 0);
 
-                                // Auto-open the scorecard when report is ready if not exam question
+                                // Auto-open the scorecard when report is ready if not exam question and not code question
                                 if (completeScorecard && completeScorecard.length > 0 &&
-                                    validQuestions[currentQuestionIndex]?.config?.responseType !== 'exam') {
+                                    validQuestions[currentQuestionIndex]?.config?.responseType !== 'exam' &&
+                                    validQuestions[currentQuestionIndex]?.config?.inputType !== 'code') {
                                     handleViewScorecard(completeScorecard);
                                 }
                             }
@@ -1580,6 +1582,11 @@ export default function LearnerQuizView({
         return validQuestions[currentQuestionIndex]?.config?.inputType === 'code';
     }, [validQuestions, currentQuestionIndex]);
 
+    const isTextQuestion = useMemo(() => {
+        if (!validQuestions || validQuestions.length === 0) return false;
+        return validQuestions[currentQuestionIndex]?.config?.inputType === 'text';
+    }, [validQuestions, currentQuestionIndex]);
+
     // Mobile view controls
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [mobileViewMode, setMobileViewMode] = useState<'question-full' | 'chat-full' | 'split'>('split');
@@ -1739,6 +1746,19 @@ export default function LearnerQuizView({
                     @media (max-width: 1024px) {
                         grid-template-columns: 1fr;
                         grid-template-rows: 0.5fr 0.5fr 0.5fr;
+                        height: 100vh;
+                        overflow: hidden;
+                    }
+                }
+                
+                .feedback-active-grid {
+                    display: grid;
+                    grid-template-columns: 1fr 2fr;
+                    height: 100%;
+                    
+                    @media (max-width: 1024px) {
+                        grid-template-columns: 1fr;
+                        grid-template-rows: 50% 50%;
                         height: 100vh;
                         overflow: hidden;
                     }
@@ -2001,7 +2021,7 @@ export default function LearnerQuizView({
             `}</style>
 
             <div
-                className={`overflow-hidden ${isCodeQuestion && codeViewState.isViewingCode ? 'three-column-grid' : 'two-column-grid'} bg-white border border-gray-200 shadow-sm dark:bg-[#111111] dark:border-[#222222] dark:shadow-none quiz-view-container`}
+                className={`overflow-hidden ${isCodeQuestion && codeViewState.isViewingCode ? (codeViewState.isViewingFeedback ? 'feedback-active-grid' : 'three-column-grid') : 'two-column-grid'} bg-white border border-gray-200 shadow-sm dark:bg-[#111111] dark:border-[#222222] dark:shadow-none quiz-view-container`}
             >
                 {/* Left side - Question (33% or 50% depending on layout) */}
                 <div className="p-6 flex flex-col lg:border-r lg:border-b-0 sm:border-b sm:border-r-0 question-container bg-white border-gray-200 dark:bg-[#1A1A1A] dark:border-[#222222]"
@@ -2046,7 +2066,7 @@ export default function LearnerQuizView({
                         </div>
                     )}
 
-                    <div className={`flex-1 ${questions.length > 1 ? 'mt-4' : ''}`}>
+                    <div className={`${isTextQuestion ? '' : 'flex-1'} ${questions.length > 1 ? 'mt-4' : ''}`}>
                         {/* Use editor with negative margin to offset unwanted space */}
                         <div
                             className="ml-[-60px]"
@@ -2084,6 +2104,40 @@ export default function LearnerQuizView({
                             )}
                         </div>
                     </div>
+
+                    {isTextQuestion && (
+                        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-[#222222] flex-1 min-h-0">
+                            <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Your Outputs</div>
+                            <div className="flex-1 min-h-0">
+                                <ChatView
+                                    currentChatHistory={currentChatHistory as ChatMessage[]}
+                                    isAiResponding={isAiResponding}
+                                    showPreparingReport={showPreparingReport}
+                                    isChatHistoryLoaded={isChatHistoryLoaded}
+                                    isTestMode={isTestMode}
+                                    taskType='quiz'
+                                    currentQuestionConfig={validQuestions[currentQuestionIndex]?.config}
+                                    isSubmitting={isSubmitting}
+                                    currentAnswer={currentAnswer}
+                                    handleInputChange={handleInputChange}
+                                    handleSubmitAnswer={handleSubmitAnswer}
+                                    handleAudioSubmit={handleAudioSubmit}
+                                    handleViewScorecard={handleViewScorecard}
+                                    viewOnly={viewOnly}
+                                    completedQuestionIds={completedQuestionIds}
+                                    currentQuestionId={validQuestions[currentQuestionIndex]?.id}
+                                    handleRetry={handleRetry}
+                                    onCodeStateChange={handleCodeStateChange}
+                                    initialIsViewingCode={isCodeQuestion}
+                                    showLearnerView={showLearnerView}
+                                    onShowLearnerViewChange={setShowLearnerView}
+                                    isAdminView={isAdminView}
+                                    userId={userId}
+                                    displayFilter="user"
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Middle column - Chat/Code View */}
@@ -2095,39 +2149,55 @@ export default function LearnerQuizView({
                             handleBackToChat={handleBackToChat}
                             lastUserMessage={getLastUserMessage as ChatMessage | null}
                         />
-                    ) : (
-                        /* Use the ChatView component */
-                        <ChatView
-                            currentChatHistory={currentChatHistory as ChatMessage[]}
+                    ) : isTextQuestion ? (
+                        <ChatHistoryView
+                            chatHistory={currentChatHistory as ChatMessage[]}
+                            onViewScorecard={handleViewScorecard}
                             isAiResponding={isAiResponding}
                             showPreparingReport={showPreparingReport}
-                            isChatHistoryLoaded={isChatHistoryLoaded}
-                            isTestMode={isTestMode}
-                            taskType='quiz'
                             currentQuestionConfig={validQuestions[currentQuestionIndex]?.config}
-                            isSubmitting={isSubmitting}
-                            currentAnswer={currentAnswer}
-                            handleInputChange={handleInputChange}
-                            handleSubmitAnswer={handleSubmitAnswer}
-                            handleAudioSubmit={handleAudioSubmit}
-                            handleViewScorecard={handleViewScorecard}
-                            viewOnly={viewOnly}
-                            completedQuestionIds={completedQuestionIds}
-                            currentQuestionId={validQuestions[currentQuestionIndex]?.id}
-                            handleRetry={handleRetry}
-                            onCodeStateChange={handleCodeStateChange}
-                            initialIsViewingCode={isCodeQuestion}
+                            taskType='quiz'
+                            onRetry={handleRetry}
                             showLearnerView={showLearnerView}
                             onShowLearnerViewChange={setShowLearnerView}
                             isAdminView={isAdminView}
-                            userId={userId}
-                            ref={chatViewRef}
+                            messageFilter="ai"
                         />
+                    ) : (
+                        <div className="flex flex-col h-full w-full">
+                            {/* Use the ChatView component */}
+                            <ChatView
+                                currentChatHistory={currentChatHistory as ChatMessage[]}
+                                isAiResponding={isAiResponding}
+                                showPreparingReport={showPreparingReport}
+                                isChatHistoryLoaded={isChatHistoryLoaded}
+                                isTestMode={isTestMode}
+                                taskType='quiz'
+                                currentQuestionConfig={validQuestions[currentQuestionIndex]?.config}
+                                isSubmitting={isSubmitting}
+                                currentAnswer={currentAnswer}
+                                handleInputChange={handleInputChange}
+                                handleSubmitAnswer={handleSubmitAnswer}
+                                handleAudioSubmit={handleAudioSubmit}
+                                handleViewScorecard={handleViewScorecard}
+                                viewOnly={viewOnly}
+                                completedQuestionIds={completedQuestionIds}
+                                currentQuestionId={validQuestions[currentQuestionIndex]?.id}
+                                handleRetry={handleRetry}
+                                onCodeStateChange={handleCodeStateChange}
+                                initialIsViewingCode={isCodeQuestion}
+                                showLearnerView={showLearnerView}
+                                onShowLearnerViewChange={setShowLearnerView}
+                                isAdminView={isAdminView}
+                                userId={userId}
+                                ref={chatViewRef}
+                            />
+                        </div>
                     )}
                 </div>
 
                 {/* Third column - Code Preview (only shown for coding questions) */}
-                {isCodeQuestion && codeViewState.isViewingCode && (
+                {isCodeQuestion && codeViewState.isViewingCode && !codeViewState.isViewingFeedback && (
                 <div className="border-l h-full overflow-auto border-gray-200 bg-gray-50 dark:border-[#222222] dark:bg-[#111111]">
                         <CodePreview
                             isRunning={codeViewState.isRunning}
