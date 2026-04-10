@@ -1143,6 +1143,7 @@ async def generate_mcq_from_material(request: GenerateMCQRequest):
         GENERATE_MCQ_SYSTEM_PROMPT,
         GENERATE_MCQ_USER_PROMPT,
         num_questions=request.num_questions,
+        difficulty=request.difficulty,
         reference_material=request.material_content,
     )
 

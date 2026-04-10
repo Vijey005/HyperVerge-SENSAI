@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { ChevronUp, ChevronDown, ChevronRight, ChevronDown as ChevronDownExpand, Plus, HelpCircle, Trash, Clipboard, Check, Loader2, Copy, FileText, Brain, BookOpen, PenSquare, FileQuestion, ClipboardList, Lock, Ban } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronRight, ChevronDown as ChevronDownExpand, Plus, HelpCircle, Trash, Clipboard, Check, Loader2, Copy, FileText, Brain, BookOpen, PenSquare, FileQuestion, ClipboardList, Lock, Ban, Sparkles } from "lucide-react";
 import { Module, ModuleItem, Quiz } from "@/types/course";
 import { QuizQuestion } from "@/types/quiz"; // Import from types instead
 import CourseItemDialog from "@/components/CourseItemDialog";
@@ -19,6 +19,7 @@ interface CourseModuleListProps {
     onDeleteItem?: (moduleId: string, itemId: string) => void;
     onAddLearningMaterial?: (moduleId: string) => Promise<void>;
     onAddQuiz?: (moduleId: string) => Promise<void>;
+    onAddMCQTest?: (moduleId: string) => void;
     onAddAssignment?: (moduleId: string) => Promise<void>;
     onMoveModuleUp?: (moduleId: string) => void;
     onMoveModuleDown?: (moduleId: string) => void;
@@ -62,6 +63,7 @@ export default function CourseModuleList({
     onDeleteItem,
     onAddLearningMaterial,
     onAddQuiz,
+    onAddMCQTest,
     onAddAssignment,
     onMoveModuleUp,
     onMoveModuleDown,
@@ -1160,6 +1162,19 @@ export default function CourseModuleList({
                                                     >
                                                         <Plus size={14} className="mr-1" />
                                                         Quiz
+                                                    </button>
+                                                </Tooltip>
+                                                <Tooltip content="Auto-generate an MCQ test from your published materials" position="top">
+                                                    <button
+                                                        onClick={() => {
+                                                            if (onAddMCQTest) {
+                                                                onAddMCQTest(module.id);
+                                                            }
+                                                        }}
+                                                        className="flex items-center px-3 py-1.5 text-sm bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-500/20 dark:text-amber-200 dark:hover:bg-amber-500/30 rounded-full transition-colors cursor-pointer"
+                                                    >
+                                                        <Sparkles size={14} className="mr-1" />
+                                                        MCQ Test
                                                     </button>
                                                 </Tooltip>
                                                 <Tooltip content="Add a new project/assignment" position="top">

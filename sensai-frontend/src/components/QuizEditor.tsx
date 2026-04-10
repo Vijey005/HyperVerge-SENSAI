@@ -852,12 +852,12 @@ const QuizEditor = forwardRef<QuizEditorHandle, QuizEditorProps>(({
 
 
 
-    const handleGenerateMCQ = async (material: string, numQuestions: number) => {
+    const handleGenerateMCQ = async (material: string, numQuestions: number, difficulty: string) => {
         try {
             const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/ai/generate-mcq`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ material_content: material, num_questions: numQuestions })
+                body: JSON.stringify({ material_content: material, num_questions: numQuestions, difficulty })
             });
 
             if (!response.ok) {

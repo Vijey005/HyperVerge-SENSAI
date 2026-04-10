@@ -16,6 +16,7 @@ import { CourseCohortSelectionDialog } from "@/components/CourseCohortSelectionD
 import { addModule } from "@/lib/api";
 import Tooltip from "@/components/Tooltip";
 import GenerateWithAIDialog, { GenerateWithAIFormData } from '@/components/GenerateWithAIDialog';
+import GenerateMCQDialog from '@/components/GenerateMCQDialog';
 import SettingsDialog from "@/components/SettingsDialog";
 import { updateTaskAndQuestionIdInUrl } from "@/lib/utils/urlUtils";
 import { useThemePreference } from "@/lib/hooks/useThemePreference";
@@ -103,6 +104,10 @@ export default function CreateCourse() {
 
     // Add state for AI generation dialog
     const [showGenerateDialog, setShowGenerateDialog] = useState(false);
+
+    // Add state for MCQ test dialog
+    const [showMCQDialog, setShowMCQDialog] = useState(false);
+    const [mcqTargetModuleId, setMcqTargetModuleId] = useState<string | null>(null);
 
     // Add state for course generation loading state
     const [isGeneratingCourse, setIsGeneratingCourse] = useState(false);
@@ -590,6 +595,79 @@ export default function CreateCourse() {
         } catch (error) {
             console.error("Error creating assignment:", error);
         }
+    };
+
+    // Handle opening the MCQ dialog for a specific module
+    const handleAddMCQTest = (moduleId: string) => {
+        setMcqTargetModuleId(moduleId);
+        setShowMCQDialog(true);
+    };
+
+    // Handle MCQ generation – create a quiz task then auto-populate it with AI-generated questions
+    const handleMCQGenerate = async (material: string, numQuestions: number, difficulty: string) => {
+        if (!mcqTargetModuleId) return;
+
+        // 1. Create a new quiz task on the backend
+        const taskRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/tasks/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                course_id: parseInt(courseId),
+                milestone_id: parseInt(mcqTargetModuleId),
+                type: "quiz",
+                title: `MCQ Test (${difficulty})`,
+                status: "draft"
+            }),
+        });
+        if (!taskRes.ok) throw new Error('Failed to create quiz task');
+        const taskData = await taskRes.json();
+
+        // 2. Optimistically add to UI
+        addQuizToState(mcqTargetModuleId, taskData, modules.find(m => m.id === mcqTargetModuleId)?.items.length || 0);
+
+        // 3. Call AI to generate MCQ questions
+        const aiRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/ai/generate-mcq`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                material_content: material,
+                num_questions: numQuestions,
+                difficulty
+            }),
+        });
+        if (!aiRes.ok) throw new Error('AI generation failed');
+        const aiData = await aiRes.json();
+
+        // 4. Save generated questions to the task
+        if (aiData.questions && Array.isArray(aiData.questions)) {
+            const formattedQuestions = aiData.questions.map((q: any, i: number) => ({
+                id: `question-${taskData.id}-${i}`,
+                content: [
+                    { type: "paragraph", content: [{ type: "text", text: q.question_text, styles: {} }] },
+                    { type: "paragraph", content: [{ type: "text", text: q.options.map((o: any) => `${o.id}: ${o.text}`).join('\n'), styles: {} }] }
+                ],
+                config: {
+                    inputType: 'text',
+                    responseType: 'chat',
+                    questionType: 'objective',
+                    title: `Q${i + 1}: ${q.question_text.substring(0, 60)}...`,
+                    correctAnswer: [{ type: "paragraph", content: [{ type: "text", text: `Correct: ${q.correct_option_id}. ${q.explanation || ''}`, styles: {} }] }],
+                    settings: { allowCopyPaste: true }
+                }
+            }));
+
+            await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/tasks/${taskData.id}/questions`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ questions: formattedQuestions }),
+            });
+
+            updateQuizQuestions(mcqTargetModuleId, taskData.id.toString(), formattedQuestions);
+        }
+
+        setToast({ show: true, title: '✨ MCQ Test Created', description: `Generated ${numQuestions} questions at ${difficulty} difficulty`, emoji: '🎉' });
+        setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
+        setShowMCQDialog(false);
     };
 
     const deleteItem = (moduleId: string, itemId: string) => {
@@ -2052,6 +2130,7 @@ export default function CreateCourse() {
                             onDeleteItem={deleteItem}
                             onAddLearningMaterial={addLearningMaterial}
                             onAddQuiz={addQuiz}
+                            onAddMCQTest={handleAddMCQTest}
                             onAddAssignment={addAssignment}
                             onMoveModuleUp={moveModuleUp}
                             onMoveModuleDown={moveModuleDown}
@@ -2299,6 +2378,14 @@ export default function CreateCourse() {
                 open={showGenerateDialog}
                 onClose={() => setShowGenerateDialog(false)}
                 onSubmit={handleGenerateCourse}
+            />
+
+            {/* Generate MCQ Test Dialog */}
+            <GenerateMCQDialog
+                open={showMCQDialog}
+                onClose={() => { setShowMCQDialog(false); setMcqTargetModuleId(null); }}
+                onGenerate={handleMCQGenerate}
+                materials={modules.flatMap(m => m.items.filter(i => i.type === 'material' && i.status === 'published').map(i => ({ id: i.id, title: i.title })))}
             />
 
             {/* Add SettingsDialog component */}

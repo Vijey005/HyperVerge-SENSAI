@@ -7,18 +7,50 @@ import { X, Sparkles } from 'lucide-react';
 interface GenerateMCQDialogProps {
     open: boolean;
     onClose: () => void;
-    onGenerate: (material: string, numQuestions: number) => Promise<void>;
+    onGenerate: (material: string, numQuestions: number, difficulty: string) => Promise<void>;
+    materials?: { id: string; title: string; content?: any[] }[];
 }
 
-export default function GenerateMCQDialog({ open, onClose, onGenerate }: GenerateMCQDialogProps) {
+export default function GenerateMCQDialog({ open, onClose, onGenerate, materials }: GenerateMCQDialogProps) {
     const [material, setMaterial] = useState('');
+    const [selectedMaterialId, setSelectedMaterialId] = useState<string>('');
     const [numQuestions, setNumQuestions] = useState(15);
+    const [difficulty, setDifficulty] = useState('medium');
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Simple block text extractor since we only need raw text for the LLM
+    const extractText = (blocks: any[]): string => {
+        if (!Array.isArray(blocks)) return "";
+        let text = "";
+        for (const block of blocks) {
+            if (block.content && Array.isArray(block.content)) {
+                for (const inline of block.content) {
+                    if (inline.type === "text" && inline.text) {
+                        text += inline.text + " ";
+                    }
+                }
+            }
+            text += "\n";
+            if (block.children) {
+                text += extractText(block.children);
+            }
+        }
+        return text;
+    };
+
     const handleSubmit = async () => {
-        if (!material.trim()) {
-            setError('Please provide some reference material');
+        let finalMaterialContent = material;
+
+        if (materials && materials.length > 0 && selectedMaterialId) {
+            const selectedMat = materials.find(m => m.id === selectedMaterialId);
+            if (selectedMat && selectedMat.content) {
+                finalMaterialContent = extractText(selectedMat.content);
+            }
+        }
+
+        if (!finalMaterialContent || !finalMaterialContent.trim()) {
+            setError('Please provide some reference material or select a topic');
             return;
         }
 
@@ -26,9 +58,11 @@ export default function GenerateMCQDialog({ open, onClose, onGenerate }: Generat
         setError(null);
         
         try {
-            await onGenerate(material, numQuestions);
+            await onGenerate(finalMaterialContent, numQuestions, difficulty);
             // reset state
             setMaterial('');
+            setSelectedMaterialId('');
+            setDifficulty('medium');
             setNumQuestions(15);
             onClose();
         } catch (err: any) {
@@ -77,33 +111,79 @@ export default function GenerateMCQDialog({ open, onClose, onGenerate }: Generat
                                     </div>
 
                                     <div className="space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                                                Reference Material
-                                            </label>
-                                            <textarea
-                                                className="w-full h-40 px-3 py-2 bg-[#0D0D0D] border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                                placeholder="Paste the course material here..."
-                                                value={material}
-                                                onChange={(e) => setMaterial(e.target.value)}
-                                                disabled={isGenerating}
-                                            />
-                                            {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
-                                        </div>
+                                        {materials && materials.length > 0 ? (
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                                                    Select Published Topic / Material
+                                                </label>
+                                                <select
+                                                    className="w-full px-3 py-2 bg-[#0D0D0D] border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                                    value={selectedMaterialId}
+                                                    onChange={(e) => setSelectedMaterialId(e.target.value)}
+                                                    disabled={isGenerating}
+                                                >
+                                                    <option value="">-- Custom material (use text box) --</option>
+                                                    {materials.map(m => (
+                                                        <option key={m.id} value={m.id}>{m.title}</option>
+                                                    ))}
+                                                </select>
+                                                {!selectedMaterialId && (
+                                                    <textarea
+                                                        className="mt-3 w-full h-32 px-3 py-2 bg-[#0D0D0D] border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                                        placeholder="Or paste custom material here..."
+                                                        value={material}
+                                                        onChange={(e) => setMaterial(e.target.value)}
+                                                        disabled={isGenerating}
+                                                    />
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                                                    Reference Material
+                                                </label>
+                                                <textarea
+                                                    className="w-full h-40 px-3 py-2 bg-[#0D0D0D] border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                                    placeholder="Paste the course material here..."
+                                                    value={material}
+                                                    onChange={(e) => setMaterial(e.target.value)}
+                                                    disabled={isGenerating}
+                                                />
+                                            </div>
+                                        )}
 
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-300 mb-2">
-                                                Number of Questions
-                                            </label>
-                                            <input
-                                                type="number"
-                                                className="w-full px-3 py-2 bg-[#0D0D0D] border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                                value={numQuestions}
-                                                onChange={(e) => setNumQuestions(Number(e.target.value))}
-                                                min={1}
-                                                max={50}
-                                                disabled={isGenerating}
-                                            />
+                                        {error && <p className="text-red-500 text-sm mt-1">{error}</p>}
+                                        
+                                        <div className="flex gap-4">
+                                            <div className="flex-1">
+                                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                                                    Number of Questions
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    className="w-full px-3 py-2 bg-[#0D0D0D] border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                                    value={numQuestions}
+                                                    onChange={(e) => setNumQuestions(Number(e.target.value))}
+                                                    min={1}
+                                                    max={50}
+                                                    disabled={isGenerating}
+                                                />
+                                            </div>
+                                            <div className="flex-1">
+                                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                                                    Difficulty
+                                                </label>
+                                                <select
+                                                    className="w-full px-3 py-2 bg-[#0D0D0D] border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                                    value={difficulty}
+                                                    onChange={(e) => setDifficulty(e.target.value)}
+                                                    disabled={isGenerating}
+                                                >
+                                                    <option value="easy">Easy</option>
+                                                    <option value="medium">Medium</option>
+                                                    <option value="hard">Hard</option>
+                                                </select>
+                                            </div>
                                         </div>
                                     </div>
 

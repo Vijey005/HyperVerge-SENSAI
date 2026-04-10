@@ -803,6 +803,7 @@ class UpdateIntegrationRequest(BaseModel):
 class GenerateMCQRequest(BaseModel):
     material_content: str
     num_questions: Optional[int] = 15
+    difficulty: Optional[str] = "medium"
     course_id: Optional[int] = None
     milestone_id: Optional[int] = None
 
